@@ -1,0 +1,61 @@
+---
+import Panel from './Panel.astro';
+import Icon from './Icon.astro';
+import type { PullRequest } from '../lib/types';
+import { absoluteTime, prStateLabel, relativeTime } from '../lib/format';
+
+interface Props {
+  pr: PullRequest | null;
+}
+
+const { pr } = Astro.props;
+const state = pr?.draft ? 'draft' : (pr?.state ?? 'closed');
+---
+
+<Panel title="Latest pull request" icon="pull">
+  {pr ? (
+    <div class="pr-card">
+      <div class="pr-card-top">
+        <span class={`badge badge-${state}`}>{prStateLabel(state)}</span>
+        <span class="pr-number">#{pr.number}</span>
+        <a
+          class="pr-title-lg"
+          href={pr.htmlUrl}
+          target="_blank"
+          rel="noreferrer noopener"
+        >
+          {pr.title}
+        </a>
+      </div>
+
+      <div class="pr-author">
+        <img src={pr.author.avatarUrl} alt="" width="20" height="20" loading="lazy" decoding="async" />
+        <span>by <strong>{pr.author.login}</strong></span>
+        <span>· opened {relativeTime(pr.createdAt)}</span>
+      </div>
+
+      {(pr.headRef || pr.baseRef) && (
+        <div class="pr-branches">
+          <Icon name="branch" size={13} />
+          {pr.headRef && <code class="branch">{pr.headRef}</code>}
+          <span>→</span>
+          {pr.baseRef && <code class="branch">{pr.baseRef}</code>}
+        </div>
+      )}
+
+      <div class="pr-meta">
+        <span>Updated {relativeTime(pr.updatedAt)}</span>
+        {pr.mergedAt && <span>Merged {relativeTime(pr.mergedAt)}</span>}
+        <a class="pr-link" href={pr.htmlUrl} target="_blank" rel="noreferrer noopener">
+          View on GitHub
+        </a>
+      </div>
+
+      <span class="visually-hidden">
+        Opened {absoluteTime(pr.createdAt)}, updated {absoluteTime(pr.updatedAt)}
+      </span>
+    </div>
+  ) : (
+    <p class="empty-inline">No pull requests have been opened in this repository yet.</p>
+  )}
+</Panel>

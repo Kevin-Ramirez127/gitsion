@@ -1,0 +1,135 @@
+---
+import Icon from './Icon.astro';
+import type { Repository } from '../lib/types';
+import {
+  absoluteTime,
+  compactNumber,
+  languageColor,
+  prStateLabel,
+  relativeTime,
+  repositoryPath,
+} from '../lib/format';
+
+interface Props {
+  repo: Repository;
+}
+
+const { repo } = Astro.props;
+const pr = repo.latestPr;
+const tag = repo.tags[0];
+const state = pr?.draft ? 'draft' : (pr?.state ?? 'closed');
+const detailsHref = repositoryPath(repo.owner.login, repo.name);
+---
+
+<article class="repo-card">
+  <div class="repo-head">
+    <img
+      class="repo-avatar"
+      src={repo.owner.avatarUrl}
+      alt=""
+      width="38"
+      height="38"
+      loading="eager"
+      decoding="async"
+    />
+    <div class="repo-head-text">
+      <div class="repo-owner">
+        <a href={`/?owner=${encodeURIComponent(repo.owner.login)}`}>{repo.owner.login}</a>
+      </div>
+      <a class="repo-name" href={detailsHref}>{repo.name}</a>
+    </div>
+    <a
+      class="icon-link"
+      href={repo.htmlUrl}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={`Open ${repo.fullName} on GitHub`}
+      aria-label={`Open ${repo.fullName} on GitHub`}
+    >
+      <Icon name="external" size={15} />
+    </a>
+  </div>
+
+  <p class:list={['repo-desc', { 'is-empty': !repo.description }]}>
+    {repo.description || 'No description provided.'}
+  </p>
+
+  <div class="repo-meta">
+    <span class="meta-item">
+      <Icon name="star" size={13} /> {compactNumber(repo.stars)}
+    </span>
+    <span class="meta-item">
+      <Icon name="fork" size={13} /> {compactNumber(repo.forks)}
+    </span>
+    <span class="meta-item">
+      <span class="lang-dot" style={`--lang-color:${languageColor(repo.language)}`}></span>
+      {repo.language || 'Unknown'}
+    </span>
+    <span class="meta-item">
+      <Icon name="issue" size={13} /> {compactNumber(repo.issues.length)}
+    </span>
+  </div>
+
+  {pr ? (
+    <a
+      class="pr-mini"
+      href={pr.htmlUrl}
+      target="_blank"
+      rel="noreferrer noopener"
+      title={`${prStateLabel(state)} pull request: ${pr.title}`}
+    >
+      <span class="pr-mini-head">
+        <span class={`badge badge-${state}`}>{prStateLabel(state)}</span>
+        <span class="pr-number">#{pr.number}</span>
+      </span>
+      <span class="pr-mini-title">{pr.title}</span>
+      <span class="pr-mini-sub">
+        <Icon name="pull" size={12} />
+        {pr.author.login} · updated {relativeTime(pr.updatedAt)}
+      </span>
+    </a>
+  ) : (
+    <div class="pr-empty">
+      <Icon name="pull" size={14} /> No pull requests yet
+    </div>
+  )}
+
+  {repo.syncError && (
+    <div class="repo-sync-error" title={repo.syncError}>
+      Last sync failed: {repo.syncError}
+    </div>
+  )}
+
+  <div class="repo-footer">
+    <div class="repo-foot-group">
+      {tag ? (
+        <a class="tag-mini" href={`${repo.htmlUrl}/releases/tag/${encodeURIComponent(tag.name)}`} target="_blank" rel="noreferrer noopener" title={`Tag ${tag.name}`}>
+          <Icon name="tag" size={11} /> {tag.name}
+        </a>
+      ) : (
+        <span class="sync-state">No tags</span>
+      )}
+      <span
+        class:list={['sync-state', { 'is-error': Boolean(repo.syncError) }]}
+        title={`Last successful sync: ${absoluteTime(repo.lastSyncedAt)}`}
+      >
+        <Icon name="clock" size={11} />
+        synced {relativeTime(repo.lastSyncedAt)}
+      </span>
+    </div>
+    <div class="repo-foot-group">
+      <form
+        method="POST"
+        action="/api/untrack"
+        data-confirm={`Stop tracking ${repo.fullName}?`}
+      >
+        <input type="hidden" name="owner" value={repo.owner.login} />
+        <input type="hidden" name="name" value={repo.name} />
+        <button class="btn btn-ghost btn-sm" type="submit" aria-label={`Stop tracking ${repo.fullName}`} title="Stop tracking">
+          <Icon name="trash" size={13} />
+        </button>
+      </form>
+      <a class="btn btn-sm" href={detailsHref}>Details</a>
+    </div>
+  </div>
+</article>

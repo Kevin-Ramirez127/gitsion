@@ -1,0 +1,28 @@
+---
+import Icon from './Icon.astro';
+---
+
+<form class="track-form" method="POST" action="/api/track">
+  <label class="form-label" for="repository">Track a repository</label>
+  <div class="form-row">
+    <input
+      class="input"
+      id="repository"
+      name="repository"
+      type="text"
+      required
+      autocomplete="off"
+      spellcheck="false"
+      placeholder="owner/repository"
+      aria-describedby="repository-hint"
+    />
+    <button class="btn btn-primary" type="submit">
+      <Icon name="plus" size={15} />
+      Track
+    </button>
+  </div>
+  <p class="form-hint" id="repository-hint">
+    Accepts <code>owner/name</code>, <code>github.com/owner/name</code> or a full GitHub URL.
+    Public repositories work without a token.
+  </p>
+</form>

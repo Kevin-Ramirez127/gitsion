@@ -1,0 +1,246 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+import EmptyState from '../../../components/EmptyState.astro';
+import Flash from '../../../components/Flash.astro';
+import Icon from '../../../components/Icon.astro';
+import IssueList from '../../../components/IssueList.astro';
+import Panel from '../../../components/Panel.astro';
+import PrPanel from '../../../components/PrPanel.astro';
+import TagList from '../../../components/TagList.astro';
+import { ApiError, getRepository } from '../../../lib/backend';
+import {
+  absoluteTime,
+  compactNumber,
+  languageColor,
+  plainNumber,
+  relativeTime,
+} from '../../../lib/format';
+import type { Repository } from '../../../lib/types';
+
+const ownerParam = Astro.params.owner ?? '';
+const nameParam = Astro.params.name ?? '';
+const okMessage = Astro.url.searchParams.get('ok');
+const errorMessage = Astro.url.searchParams.get('error');
+
+let repo: Repository | null = null;
+let loadError = '';
+let notFound = false;
+
+try {
+  repo = await getRepository(ownerParam, nameParam);
+} catch (error) {
+  if (error instanceof ApiError && error.status === 404) {
+    notFound = true;
+    Astro.response.status = 404;
+  } else {
+    loadError =
+      error instanceof ApiError
+        ? error.message
+        : 'Could not reach the gitsion backend.';
+    Astro.response.status = 502;
+  }
+}
+---
+
+<Layout
+  title={repo ? `${repo.fullName} · gitsion` : 'Repository unavailable · gitsion'}
+  description={repo?.description || 'Repository details on gitsion.'}
+>
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/">Dashboard</a>
+    <span class="breadcrumb-sep">/</span>
+    {repo ? (
+      <>
+        <a href={`/?owner=${encodeURIComponent(repo.owner.login)}`}>{repo.owner.login}</a>
+        <span class="breadcrumb-sep">/</span>
+        <span>{repo.name}</span>
+      </>
+    ) : (
+      <>
+        <span>{ownerParam}</span>
+        <span class="breadcrumb-sep">/</span>
+        <span>{nameParam}</span>
+      </>
+    )}
+  </nav>
+
+  {repo ? (
+    <>
+      <header class="repo-hero">
+        <div class="repo-hero-main">
+          <img
+            class="repo-avatar-lg"
+            src={repo.owner.avatarUrl}
+            alt=""
+            width="62"
+            height="62"
+            loading="eager"
+            decoding="async"
+          />
+          <div class="repo-heading">
+            <h1>
+              <span class="repo-owner-name">{repo.owner.login}</span>
+              <span class="slash">/</span>
+              <span>{repo.name}</span>
+            </h1>
+            <p class="repo-description">
+              {repo.description || 'No description provided.'}
+            </p>
+            {repo.topics.length > 0 && (
+              <div class="topics">
+                {repo.topics.map((topic) => <span class="topic">{topic}</span>)}
+              </div>
+            )}
+          </div>
+        </div>
+        <div class="repo-actions">
+          <a class="btn btn-sm" href={repo.htmlUrl} target="_blank" rel="noreferrer noopener">
+            <Icon name="external" size={14} /> GitHub
+          </a>
+          <form method="POST" action="/api/refresh">
+            <input type="hidden" name="owner" value={repo.owner.login} />
+            <input type="hidden" name="name" value={repo.name} />
+            <button class="btn btn-sm" type="submit">
+              <Icon name="refresh" size={14} /> Refresh
+            </button>
+          </form>
+          <form
+            method="POST"
+            action="/api/untrack"
+            data-confirm={`Stop tracking ${repo.fullName}?`}
+          >
+            <input type="hidden" name="owner" value={repo.owner.login} />
+            <input type="hidden" name="name" value={repo.name} />
+            <button class="btn btn-danger btn-sm" type="submit">
+              <Icon name="trash" size={14} /> Remove
+            </button>
+          </form>
+        </div>
+      </header>
+
+      <div class="detail-stats" aria-label="Repository statistics">
+        <span class="detail-stat">
+          <Icon name="star" size={13} /> <strong>{compactNumber(repo.stars)}</strong> stars
+        </span>
+        <span class="detail-stat">
+          <Icon name="fork" size={13} /> <strong>{compactNumber(repo.forks)}</strong> forks
+        </span>
+        <span class="detail-stat">
+          <span class="lang-dot" style={`--lang-color:${languageColor(repo.language)}`}></span>
+          <strong>{repo.language || 'Unknown'}</strong>
+        </span>
+        <span class="detail-stat">
+          <Icon name="issue" size={13} /> <strong>{plainNumber(repo.openItems)}</strong> open items
+        </span>
+        <span class="detail-stat">
+          <Icon name="branch" size={13} /> <strong>{repo.defaultBranch || 'main'}</strong>
+        </span>
+        <span class="detail-stat">
+          <Icon name="clock" size={13} /> synced <strong>{relativeTime(repo.lastSyncedAt)}</strong>
+        </span>
+      </div>
+
+      {okMessage && <Flash kind="success" message={okMessage} />}
+      {errorMessage && <Flash kind="error" message={errorMessage} />}
+
+      {repo.syncError && (
+        <div class="sync-banner" role="alert">
+          <Icon name="alert" size={16} />
+          <div>
+            <strong>Last sync failed.</strong> Showing the most recent successful snapshot
+            from {absoluteTime(repo.lastSyncedAt)}.<br />
+            {repo.syncError}
+          </div>
+        </div>
+      )}
+
+      <div class="detail-grid">
+        <div class="detail-main">
+          <PrPanel pr={repo.latestPr} />
+
+          <Panel title="Open issues" icon="issue" flush>
+            <span slot="action" class="section-note">
+              {repo.issues.length} {repo.issues.length === 1 ? 'issue' : 'issues'}
+            </span>
+            <IssueList issues={repo.issues} />
+          </Panel>
+        </div>
+
+        <aside class="detail-side">
+          <Panel title="Owner" icon="users">
+            <div class="owner-card">
+              <img
+                class="owner-avatar"
+                src={repo.owner.avatarUrl}
+                alt=""
+                width="48"
+                height="48"
+                loading="lazy"
+                decoding="async"
+              />
+              <div class="owner-info">
+                <a class="owner-login" href={repo.owner.htmlUrl} target="_blank" rel="noreferrer noopener">
+                  {repo.owner.login}
+                </a>
+                <div class="owner-type">{repo.owner.type || 'Account'}</div>
+                <a href={`/?owner=${encodeURIComponent(repo.owner.login)}`}>All repos by owner</a>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel title="Tags" icon="tag">
+            <span slot="action" class="section-note">
+              {repo.tags.length} {repo.tags.length === 1 ? 'tag' : 'tags'}
+            </span>
+            <TagList tags={repo.tags} />
+          </Panel>
+
+          <Panel title="Repository" icon="repo">
+            <dl class="kv-list">
+              <div class="kv">
+                <dt>Visibility</dt>
+                <dd>{repo.visibility || 'public'}</dd>
+              </div>
+              <div class="kv">
+                <dt>Default branch</dt>
+                <dd>{repo.defaultBranch || 'main'}</dd>
+              </div>
+              <div class="kv">
+                <dt>Open items</dt>
+                <dd>{plainNumber(repo.openItems)}</dd>
+              </div>
+              <div class="kv">
+                <dt>Pushed</dt>
+                <dd title={absoluteTime(repo.pushedAt)}>{relativeTime(repo.pushedAt)}</dd>
+              </div>
+              <div class="kv">
+                <dt>Tracked</dt>
+                <dd title={absoluteTime(repo.trackedAt)}>{relativeTime(repo.trackedAt)}</dd>
+              </div>
+              <div class="kv">
+                <dt>Last sync</dt>
+                <dd title={absoluteTime(repo.lastSyncedAt)}>{relativeTime(repo.lastSyncedAt)}</dd>
+              </div>
+            </dl>
+          </Panel>
+        </aside>
+      </div>
+    </>
+  ) : notFound ? (
+    <EmptyState
+      title="Repository is not tracked"
+      text={`${ownerParam}/${nameParam} is not on the dashboard. Track it first, then come back.`}
+      icon="repo"
+    >
+      <a class="btn" href="/">Back to dashboard</a>
+    </EmptyState>
+  ) : (
+    <div class="banner" role="alert">
+      <Icon name="alert" size={18} />
+      <div>
+        <strong>Could not load this repository</strong>
+        <p>{loadError}</p>
+      </div>
+    </div>
+  )}
+</Layout>

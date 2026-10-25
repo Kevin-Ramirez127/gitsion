@@ -1,0 +1,149 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AddRepoForm from '../components/AddRepoForm.astro';
+import EmptyState from '../components/EmptyState.astro';
+import Flash from '../components/Flash.astro';
+import Icon from '../components/Icon.astro';
+import OwnerChips from '../components/OwnerChips.astro';
+import RepoCard from '../components/RepoCard.astro';
+import StatCard from '../components/StatCard.astro';
+import { ApiError, listOwners, listRepositories } from '../lib/backend';
+import { plainNumber, relativeTime } from '../lib/format';
+import type { OwnerSummary, Repository } from '../lib/types';
+
+const ownerFilter = (Astro.url.searchParams.get('owner') ?? '').trim();
+const okMessage = Astro.url.searchParams.get('ok');
+const errorMessage = Astro.url.searchParams.get('error');
+
+let repos: Repository[] = [];
+let owners: OwnerSummary[] = [];
+let loadError = '';
+
+try {
+  [repos, owners] = await Promise.all([
+    listRepositories(ownerFilter || undefined),
+    listOwners(),
+  ]);
+} catch (error) {
+  loadError =
+    error instanceof ApiError
+      ? error.message
+      : 'Could not reach the gitsion backend.';
+}
+
+const totalIssues = repos.reduce((total, repo) => total + repo.issues.length, 0);
+const totalTags = repos.reduce((total, repo) => total + repo.tags.length, 0);
+const openLatestPrs = repos.filter(
+  (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
+).length;
+const lastSync = repos.reduce<string>((latest, repo) => {
+  if (!repo.lastSyncedAt) return latest;
+  if (!latest) return repo.lastSyncedAt;
+  return new Date(repo.lastSyncedAt) > new Date(latest) ? repo.lastSyncedAt : latest;
+}, '');
+const activeOwner =
+  owners.find((owner) => owner.login.toLowerCase() === ownerFilter.toLowerCase())?.login ??
+  ownerFilter;
+const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
+---
+
+<Layout>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <Icon name="commit" size={13} /> Repository overview
+      </p>
+      <h1>
+        All your repositories,<br />
+        <em>one calm dashboard.</em>
+      </h1>
+      <p class="lede">
+        Follow the pull request that moved last, the tags it carries, who owns the repo and
+        which issues are still open. Data is pulled from the public GitHub API and cached
+        in MongoDB.
+      </p>
+    </div>
+    <div class="hero-aside">
+      <AddRepoForm />
+    </div>
+  </section>
+
+  {okMessage && <Flash kind="success" message={okMessage} />}
+  {errorMessage && <Flash kind="error" message={errorMessage} />}
+
+  {loadError && (
+    <div class="banner" role="alert">
+      <Icon name="alert" size={18} />
+      <div>
+        <strong>Could not load the dashboard</strong>
+        <p>{loadError}</p>
+      </div>
+    </div>
+  )}
+
+  <section class="stats" aria-label="Dashboard summary">
+    <StatCard
+      label="Repositories"
+      value={plainNumber(repos.length)}
+      hint={ownerFilter ? `filtered by ${activeOwner}` : 'tracked repositories'}
+      icon="repo"
+    />
+    <StatCard
+      label="Open issues"
+      value={plainNumber(totalIssues)}
+      hint="up to 25 per repository"
+      icon="issue"
+    />
+    <StatCard
+      label="Repos with open PR"
+      value={plainNumber(openLatestPrs)}
+      hint="latest PR per repository"
+      icon="pull"
+    />
+    <StatCard
+      label="Tags captured"
+      value={plainNumber(totalTags)}
+      hint="up to 10 per repository"
+      icon="tag"
+    />
+  </section>
+
+  <OwnerChips owners={owners} activeOwner={activeOwner} total={totalTracked} />
+
+  <div class="section-head">
+    <h2 class="section-title">
+      {activeOwner ? `Repositories owned by ${activeOwner}` : 'Tracked repositories'}
+    </h2>
+    <span class="section-note">
+      {repos.length} {repos.length === 1 ? 'repository' : 'repositories'}
+      {lastSync && ` · last sync ${relativeTime(lastSync)}`}
+    </span>
+  </div>
+
+  {repos.length > 0 ? (
+    <div class="repo-grid">
+      {repos.map((repo) => <RepoCard repo={repo} />)}
+    </div>
+  ) : ownerFilter ? (
+    <EmptyState
+      title={`No repositories tracked for ${activeOwner}`}
+      text="The owner filter matched nothing. Clear it to see all tracked repositories."
+      icon="users"
+    >
+      <a class="btn" href="/">Clear filter</a>
+    </EmptyState>
+  ) : (
+    <EmptyState
+      title="Nothing tracked yet"
+      text="Add a public GitHub repository above. gitsion will fetch its latest pull request, tags, owner and open issues, then keep the snapshot fresh in the background."
+      icon="repo"
+    >
+      <form method="POST" action="/api/track">
+        <input type="hidden" name="repository" value="withastro/astro" />
+        <button class="btn btn-primary" type="submit">
+          <Icon name="plus" size={15} /> Track withastro/astro
+        </button>
+      </form>
+    </EmptyState>
+  )}
+</Layout>

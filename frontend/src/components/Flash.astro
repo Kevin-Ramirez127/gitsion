@@ -1,0 +1,19 @@
+---
+import Icon from './Icon.astro';
+
+interface Props {
+  kind?: 'success' | 'error';
+  message: string;
+}
+
+const { kind = 'success', message } = Astro.props;
+---
+
+<div
+  class={`flash flash-${kind}`}
+  role={kind === 'error' ? 'alert' : 'status'}
+  data-flash
+>
+  <Icon name={kind === 'error' ? 'alert' : 'check'} size={16} />
+  <span>{message}</span>
+</div>
