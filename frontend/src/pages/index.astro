@@ -1,12 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import ActivityFeed from '../components/ActivityFeed.astro';
 import AddRepoForm from '../components/AddRepoForm.astro';
 import EmptyState from '../components/EmptyState.astro';
 import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
 import OwnerChips from '../components/OwnerChips.astro';
-import RepoCard from '../components/RepoCard.astro';
 import StatCard from '../components/StatCard.astro';
+import { buildActivityFeed, FEED_PAGE_SIZE } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
@@ -14,6 +15,7 @@ import type { OwnerSummary, Repository } from '../lib/types';
 const ownerFilter = (Astro.url.searchParams.get('owner') ?? '').trim();
 const okMessage = Astro.url.searchParams.get('ok');
 const errorMessage = Astro.url.searchParams.get('error');
+const showAll = Astro.url.searchParams.get('show') === 'all';
 
 let repos: Repository[] = [];
 let owners: OwnerSummary[] = [];
@@ -32,7 +34,6 @@ try {
 }
 
 const totalIssues = repos.reduce((total, repo) => total + repo.issues.length, 0);
-const totalTags = repos.reduce((total, repo) => total + repo.tags.length, 0);
 const openLatestPrs = repos.filter(
   (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
 ).length;
@@ -45,22 +46,34 @@ const activeOwner =
   owners.find((owner) => owner.login.toLowerCase() === ownerFilter.toLowerCase())?.login ??
   ownerFilter;
 const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
+
+const activities = buildActivityFeed(repos);
+const visibleActivities = showAll ? activities : activities.slice(0, FEED_PAGE_SIZE);
+const truncated = !showAll && activities.length > FEED_PAGE_SIZE;
+const latestActivity = activities[0];
+
+function feedHref(all: boolean): string {
+  const params = new URLSearchParams();
+  if (ownerFilter) params.set('owner', ownerFilter);
+  if (all) params.set('show', 'all');
+  const query = params.toString();
+  return query ? `/?${query}` : '/';
+}
 ---
 
 <Layout>
   <section class="hero">
     <div class="hero-copy">
       <p class="eyebrow">
-        <Icon name="commit" size={13} /> Repository overview
+        <Icon name="commit" size={13} /> Activity feed
       </p>
       <h1>
-        All your repositories,<br />
-        <em>one calm dashboard.</em>
+        Everything that moved,<br />
+        <em>newest first.</em>
       </h1>
       <p class="lede">
-        Follow the pull request that moved last, the tags it carries, who owns the repo and
-        which issues are still open. Data is pulled from the public GitHub API and cached
-        in MongoDB.
+        Pushes, pull requests and issues from the repositories you track, gathered into one
+        calm feed. Data is pulled from the public GitHub API and cached in MongoDB.
       </p>
     </div>
     <div class="hero-aside">
@@ -83,9 +96,21 @@ const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0)
 
   <section class="stats" aria-label="Dashboard summary">
     <StatCard
+      label="Activities"
+      value={plainNumber(activities.length)}
+      hint="pushes, pull requests & issues"
+      icon="commit"
+    />
+    <StatCard
       label="Repositories"
       value={plainNumber(repos.length)}
-      hint={ownerFilter ? `filtered by ${activeOwner}` : 'tracked repositories'}
+      hint={
+        ownerFilter
+          ? `filtered by ${activeOwner}`
+          : lastSync
+            ? `last sync ${relativeTime(lastSync)}`
+            : 'tracked repositories'
+      }
       icon="repo"
     />
     <StatCard
@@ -100,34 +125,39 @@ const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0)
       hint="latest PR per repository"
       icon="pull"
     />
-    <StatCard
-      label="Tags captured"
-      value={plainNumber(totalTags)}
-      hint="up to 10 per repository"
-      icon="tag"
-    />
   </section>
 
   <OwnerChips owners={owners} activeOwner={activeOwner} total={totalTracked} />
 
   <div class="section-head">
     <h2 class="section-title">
-      {activeOwner ? `Repositories owned by ${activeOwner}` : 'Tracked repositories'}
+      {activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
     </h2>
     <span class="section-note">
-      {repos.length} {repos.length === 1 ? 'repository' : 'repositories'}
-      {lastSync && ` · last sync ${relativeTime(lastSync)}`}
+      {plainNumber(activities.length)} {activities.length === 1 ? 'activity' : 'activities'}
+      {truncated && ` · showing ${plainNumber(visibleActivities.length)}`}
+      {latestActivity && ` · latest ${relativeTime(latestActivity.timestamp)}`}
     </span>
   </div>
 
-  {repos.length > 0 ? (
-    <div class="repo-grid">
-      {repos.map((repo) => <RepoCard repo={repo} />)}
-    </div>
+  {repos.length > 0 && activities.length > 0 ? (
+    <ActivityFeed activities={visibleActivities} />
+  ) : repos.length > 0 ? (
+    <EmptyState
+      title="No activity captured yet"
+      text="The latest snapshots have no pushes, pull requests or issues to show. Sync the repositories to refresh them."
+      icon="clock"
+    >
+      <form method="POST" action="/api/sync">
+        <button class="btn btn-primary" type="submit">
+          <Icon name="refresh" size={15} /> Sync all
+        </button>
+      </form>
+    </EmptyState>
   ) : ownerFilter ? (
     <EmptyState
       title={`No repositories tracked for ${activeOwner}`}
-      text="The owner filter matched nothing. Clear it to see all tracked repositories."
+      text="The owner filter matched nothing. Clear it to see all tracked repositories and their activity."
       icon="users"
     >
       <a class="btn" href="/">Clear filter</a>
@@ -135,7 +165,7 @@ const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0)
   ) : (
     <EmptyState
       title="Nothing tracked yet"
-      text="Add a public GitHub repository above. gitsion will fetch its latest pull request, tags, owner and open issues, then keep the snapshot fresh in the background."
+      text="Add a public GitHub repository above. gitsion will fetch its latest activity, pull request, tags and open issues, then keep the snapshot fresh in the background."
       icon="repo"
     >
       <form method="POST" action="/api/track">
@@ -145,5 +175,19 @@ const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0)
         </button>
       </form>
     </EmptyState>
+  )}
+
+  {activities.length > FEED_PAGE_SIZE && (
+    <div class="feed-more">
+      {showAll ? (
+        <a class="btn btn-ghost" href={feedHref(false)}>
+          Show latest {plainNumber(FEED_PAGE_SIZE)}
+        </a>
+      ) : (
+        <a class="btn" href={feedHref(true)}>
+          Show all {plainNumber(activities.length)} activities
+        </a>
+      )}
+    </div>
   )}
 </Layout>

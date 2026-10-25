@@ -1,8 +1,8 @@
 # gitsion
 
-A small self-hosted dashboard for the GitHub repositories you care about. Track a
-repository once and see its **latest pull request**, **tags**, **owner** and **open
-issues** in one place.
+A small self-hosted feed for the GitHub repositories you care about. Track a
+repository once and see its **latest pushes, pull requests and issues** in one
+newest-first stream.
 
 The dashboard is intentionally public: there is no login. GitHub access uses the
 public API by default; an optional personal access token raises the rate limit and
@@ -15,8 +15,8 @@ enables private repositories.
 ## Features
 
 - Track public (or private, with a token) repositories by `owner/name`, `github.com/owner/name` or a full URL.
-- Dashboard cards with owner, description, stars, forks, language, the most recently updated pull request, a tag, open-issue count and sync age.
-- Filter the dashboard by owner.
+- Newest-first activity feed of pushes, pull requests and issues across tracked repositories, grouped by day, with actor avatars, labels, relative times and a show-all view.
+- Filter the feed by owner.
 - Repository detail page with the latest PR (open/merged/closed), up to 10 tags, open issues with labels, owner card and repository facts.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
 - Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.
@@ -36,7 +36,7 @@ The compose stack runs three services:
 
 | Service | Address | Notes |
 | --- | --- | --- |
-| frontend | `http://localhost:4321` | Public dashboard, SSR, proxies form actions |
+| frontend | `http://localhost:4321` | Public activity feed, SSR, proxies form actions |
 | backend | `http://127.0.0.1:8080` | JSON API, bound to loopback on the host |
 | mongo | `mongodb://127.0.0.1:27017` | Persistent `gitsion_mongo-data` volume |
 
@@ -179,8 +179,8 @@ backend/
   internal/service/       track, untrack, refresh, background sync
   internal/store/         Mongo implementation + integration test
 frontend/
-  src/pages/              dashboard, detail page, form-action proxies
-  src/components/         cards, panels, tags, issues, icons
+  src/pages/              feed, detail page, form-action proxies
+  src/components/         activity feed, forms, panels, tags, issues, icons
   src/lib/                typed API client and formatting helpers
   src/middleware.ts       security headers (CSP, nosniff, frame denial)
   public/                 favicon and confirmation script
@@ -214,6 +214,7 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
   add private repositories when the whole deployment is in a trusted network.
 - Only the repository owner/org is shown; collaborators would require more API calls/permissions.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
+- The feed is built from cached snapshots: one push timestamp per repository, the latest pull request per repository, and up to 25 open issues per repository. It is newest-first and defaults to the latest 100 activities; `?show=all` reveals the full feed.
 - Issue lists show up to 25 open issues per repository (fewer if the first 100 issue/PR
   entries contain many PRs); the “open items” metric is GitHub's count and includes pull requests.
 - No webhooks, charts, commit history or multi-user accounts. The API reads cached snapshots; background sync plus manual refresh keeps them current.

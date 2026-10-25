@@ -7,8 +7,8 @@ interface Props {
 }
 
 const {
-  title = 'gitsion · GitHub repository dashboard',
-  description = 'Track GitHub repositories and see their latest pull request, tags, owner and open issues in one place.',
+  title = 'gitsion · GitHub activity feed',
+  description = 'A newest-first feed of pushes, pull requests and issues across the GitHub repositories you track.',
 } = Astro.props;
 ---
 
@@ -40,7 +40,7 @@ const {
           <span>gitsion</span>
         </a>
         <div class="header-actions">
-          <span class="header-note">GitHub repository dashboard</span>
+          <span class="header-note">GitHub activity feed</span>
           <form method="POST" action="/api/sync">
             <button class="btn btn-ghost btn-sm" type="submit" title="Refresh every tracked repository">
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">

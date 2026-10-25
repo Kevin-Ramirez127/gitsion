@@ -1,0 +1,104 @@
+---
+import Icon from './Icon.astro';
+import {
+  activityActionLabel,
+  groupActivitiesByDay,
+  type Activity,
+} from '../lib/activity';
+import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
+
+interface Props {
+  activities: Activity[];
+}
+
+const { activities } = Astro.props;
+const groups = groupActivitiesByDay(activities);
+
+const icons: Record<Activity['kind'], string> = {
+  push: 'commit',
+  pull: 'pull',
+  issue: 'issue',
+};
+
+function tone(activity: Activity): string {
+  if (activity.kind === 'push') return 'push';
+  if (activity.kind === 'issue') return 'issue';
+  return activity.action === 'updated' ? 'pull' : activity.action;
+}
+---
+
+<div class="feed">
+  {groups.map((group) => (
+    <section class="feed-day" aria-labelledby={`feed-day-${group.key}`}>
+      <h3 class="feed-day-label" id={`feed-day-${group.key}`}>{group.label}</h3>
+      <ol class="feed-list">
+        {group.activities.map((activity) => (
+          <li class="feed-item">
+            <span class="feed-avatar-wrap">
+              <img
+                class="feed-avatar"
+                src={activity.actor.avatarUrl}
+                alt=""
+                width="34"
+                height="34"
+                loading="lazy"
+                decoding="async"
+              />
+              <span class:list={['feed-kind', `is-${tone(activity)}`]}>
+                <Icon name={icons[activity.kind]} size={10} strokeWidth={2.4} />
+              </span>
+            </span>
+
+            <div class="feed-body">
+              <p class="feed-line">
+                <a class="feed-actor" href={activity.actor.htmlUrl} target="_blank" rel="noreferrer noopener">
+                  {activity.actor.login}
+                </a>
+                <span class="feed-action">{activityActionLabel(activity)}</span>
+                <a class="feed-title" href={activity.url} target="_blank" rel="noreferrer noopener">
+                  {activity.title}
+                </a>
+                {activity.number !== undefined && (
+                  <span class="feed-number">#{activity.number}</span>
+                )}
+              </p>
+
+              <p class="feed-sub">
+                <a class="feed-repo" href={repositoryPath(activity.repo.owner.login, activity.repo.name)}>
+                  {activity.repo.fullName}
+                </a>
+                {activity.branch && (
+                  <span class="feed-branch">
+                    <Icon name="branch" size={11} /> {activity.branch}
+                  </span>
+                )}
+                {activity.draft && <span class="feed-label">Draft</span>}
+                {activity.labels?.slice(0, 3).map((label) => (
+                  <span class="feed-label">{label}</span>
+                ))}
+                <time
+                  class="feed-time"
+                  datetime={activity.timestamp}
+                  title={absoluteTime(activity.timestamp)}
+                >
+                  {relativeTime(activity.timestamp)}
+                </time>
+              </p>
+            </div>
+
+            <a
+              class="feed-link"
+              href={activity.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              title="Open on GitHub"
+              aria-label={`Open ${activity.title} on GitHub`}
+            >
+              <Icon name="external" size={14} />
+            </a>
+          </li>
+        ))}
+      </ol>
+    </section>
+  ))}
+</div>
