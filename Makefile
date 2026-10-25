@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help mongo backend frontend up down logs build test integration-test fmt clean
+.PHONY: help mongo backend frontend import up down logs build test integration-test fmt clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -15,6 +15,9 @@ backend: ## Run the Go API on :8080 (reads ../.env when present)
 
 frontend: ## Run the Astro dev server on :4321
 	cd frontend && npm run dev
+
+import: ## Bulk-import repositories (ARGS="https://github.com/org")
+	./import $(ARGS)
 
 up: ## Build and start mongo + backend + frontend with Docker
 	docker compose up --build -d

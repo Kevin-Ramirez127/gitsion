@@ -21,6 +21,7 @@ enables private repositories.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
 - Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.
 - Empty, stale, 404 and backend-unreachable states are handled in the UI.
+- Bulk-import every repository from a GitHub organization/user profile, or from a JSON list, with the interactive `./import` script.
 
 ## Quick start (Docker)
 
@@ -86,6 +87,48 @@ Without a token GitHub allows 60 requests/hour, so the backend defaults to a
 30-minute cadence and warns at startup. That comfortably covers a handful of
 public repositories. Add `GITHUB_TOKEN` for more repositories or a faster cadence.
 
+## Bulk import
+
+`./import` lists repositories from a GitHub organization/user profile and tracks
+the ones you pick. It needs a running backend (`make backend` or
+`docker compose up`) and Node 22+.
+
+```bash
+./import https://github.com/withastro
+./import https://github.com/orgs/astral-sh/repositories --dry-run
+./import @withastro --select 1,3-5
+./import repos.json --all
+./import --json repos.json --all
+./import --json '["withastro/astro", "astral-sh/ruff"]' --all
+
+# Through make:
+make import ARGS="https://github.com/withastro"
+```
+
+For a profile, the script first asks whether to import **all** repositories.
+Answer no to choose individual numbers or ranges such as `1,3-5`. Already
+tracked repositories are skipped. `--all` and `--select` make it
+non-interactive; `--dry-run` only shows the table.
+
+The script loads `.env` from the current directory or its parent and honors
+`BACKEND_URL`, `GITHUB_TOKEN` and `GITHUB_API_URL`. Without a token only public
+repositories are listed. The backend also needs the token for the imported
+snapshots, otherwise GitHub's 60 requests/hour limit applies to the import.
+
+`--json` (or a positional path ending in `.json`) accepts an array of repository
+strings or GitHub-like objects, or an inline array. A top-level
+`{"repositories": [...]}` object also works:
+
+```json
+[
+  "withastro/astro",
+  "https://github.com/withastro/starlight",
+  { "full_name": "astral-sh/ruff", "description": "An extremely fast Python linter" }
+]
+```
+
+Run `./import --help` for every option.
+
 ## API
 
 All routes are public JSON. The frontend calls this API server-side; form actions
@@ -141,6 +184,7 @@ frontend/
   src/lib/                typed API client and formatting helpers
   src/middleware.ts       security headers (CSP, nosniff, frame denial)
   public/                 favicon and confirmation script
+import                    interactive bulk importer (Node, no dependencies)
 docker-compose.yml
 ```
 
