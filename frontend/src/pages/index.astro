@@ -12,8 +12,6 @@ import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
 
 const searchParams = Astro.url.searchParams;
-const isAdmin = Astro.locals.isAdmin;
-const writesEnabled = Astro.locals.writesEnabled;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
 const query = (searchParams.get('q') ?? '').trim();
 const okMessage = searchParams.get('ok');
@@ -182,17 +180,11 @@ function labelHref(label: string): string {
     </div>
     <div class="hero-aside">
       <div class="track-form">
-        <p class="form-label">Public dashboard</p>
+        <p class="form-label">Public feed</p>
         <p class="form-hint">
-          Browse freely. This page is read-only; repositories are managed from the admin area.
+          Snapshots are fetched from the public GitHub API, cached in MongoDB and refreshed
+          automatically.
         </p>
-        {!writesEnabled ? (
-          <p class="form-hint">This instance is read-only.</p>
-        ) : (
-          <a class="btn btn-primary btn-block admin-cta" href="/admin">
-            {isAdmin ? 'Manage repositories' : 'Admin sign in'}
-          </a>
-        )}
       </div>
     </div>
   </section>
@@ -410,7 +402,7 @@ function labelHref(label: string): string {
   ) : repos.length > 0 ? (
     <EmptyState
       title="No activity captured yet"
-      text="The latest snapshots have no pushes, pull requests or issues to show. They refresh automatically in the background, or an administrator can sync them from the admin area."
+      text="The latest snapshots have no pushes, pull requests or issues to show. They refresh automatically in the background."
       icon="clock"
     />
   ) : ownerFilter ? (
@@ -424,19 +416,9 @@ function labelHref(label: string): string {
   ) : (
     <EmptyState
       title="Nothing tracked yet"
-      text={
-        writesEnabled
-          ? 'No repositories are tracked yet. An administrator can add public GitHub repositories from the admin area.'
-          : 'No repositories are tracked yet. This dashboard is read-only.'
-      }
+      text="No repositories are tracked on this instance yet."
       icon="repo"
-    >
-      {writesEnabled && (
-        <a class="btn btn-primary" href="/admin">
-          {isAdmin ? 'Manage repositories' : 'Admin sign in'}
-        </a>
-      )}
-    </EmptyState>
+    />
   )}
 
   {activities.length > FEED_PAGE_SIZE && (

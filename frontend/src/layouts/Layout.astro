@@ -13,6 +13,7 @@ const {
 
 const isAdmin = Astro.locals.isAdmin;
 const writesEnabled = Astro.locals.writesEnabled;
+const isHome = Astro.url.pathname === '/';
 ---
 
 <!doctype html>
@@ -45,9 +46,11 @@ const writesEnabled = Astro.locals.writesEnabled;
         </a>
         <div class="header-actions">
           <span class="header-note">GitHub activity feed</span>
-          <a class="header-note" href="/admin">
-            {isAdmin ? 'Admin' : writesEnabled ? 'Admin sign in' : 'Read-only'}
-          </a>
+          {!isHome && (
+            <a class="header-note" href="/admin">
+              {isAdmin ? 'Admin' : writesEnabled ? 'Admin sign in' : 'Read-only'}
+            </a>
+          )}
         </div>
       </div>
     </header>
