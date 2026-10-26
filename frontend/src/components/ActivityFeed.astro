@@ -1,12 +1,7 @@
 ---
-import Icon from './Icon.astro';
-import {
-  activityActionLabel,
-  groupActivities,
-  type Activity,
-  type FeedView,
-} from '../lib/activity';
-import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
+import ActivityItem from './ActivityItem.astro';
+import { groupActivities, type Activity, type FeedView } from '../lib/activity';
+import { relativeTime } from '../lib/format';
 
 interface Props {
   activities: Activity[];
@@ -14,19 +9,28 @@ interface Props {
 }
 
 const { activities, view } = Astro.props;
-const groups = groupActivities(activities, view);
 
-const icons: Record<Activity['kind'], string> = {
-  push: 'commit',
-  pull: 'pull',
-  issue: 'issue',
-};
+const todayUtc = new Date().toISOString().slice(0, 10);
+const ACTIVE_PREVIEW = 5;
+const STALE_PREVIEW = 1;
 
-function tone(activity: Activity): string {
-  if (activity.kind === 'push') return 'push';
-  if (activity.kind === 'issue') return 'issue';
-  return activity.action === 'updated' ? 'pull' : activity.action;
-}
+const groups = groupActivities(activities, view).map((group) => {
+  // Project groups collapse when their latest activity predates today, or when
+  // the project has more than five activities. Stale projects show only their
+  // newest activity; busy current projects show the five newest. Person groups
+  // stay fully expanded.
+  const collapsible = view === 'project';
+  const stale = group.latest.slice(0, 10) < todayUtc;
+  const previewSize = collapsible
+    ? stale
+      ? STALE_PREVIEW
+      : ACTIVE_PREVIEW
+    : group.activities.length;
+  const preview = group.activities.slice(0, previewSize);
+  const rest = group.activities.slice(preview.length);
+
+  return { ...group, preview, rest };
+});
 ---
 
 <div class="feed">
@@ -60,75 +64,25 @@ function tone(activity: Activity): string {
       </header>
 
       <ol class="feed-list">
-        {group.activities.map((activity) => (
-          <li class="feed-item">
-            <span class="feed-avatar-wrap">
-              <img
-                class="feed-avatar"
-                src={activity.actor.avatarUrl}
-                alt=""
-                width="34"
-                height="34"
-                loading="lazy"
-                decoding="async"
-              />
-              <span class:list={['feed-kind', `is-${tone(activity)}`]}>
-                <Icon name={icons[activity.kind]} size={10} strokeWidth={2.4} />
-              </span>
-            </span>
-
-            <div class="feed-body">
-              <p class="feed-line">
-                <a class="feed-actor" href={activity.actor.htmlUrl} target="_blank" rel="noreferrer noopener">
-                  {activity.actor.login}
-                </a>
-                <span class="feed-action">{activityActionLabel(activity)}</span>
-                <a class="feed-title" href={activity.url} target="_blank" rel="noreferrer noopener">
-                  {activity.title}
-                </a>
-                {activity.number !== undefined && (
-                  <span class="feed-number">#{activity.number}</span>
-                )}
-              </p>
-
-              <p class="feed-sub">
-                {view === 'user' && (
-                  <a class="feed-repo" href={repositoryPath(activity.repo.owner.login, activity.repo.name)}>
-                    {activity.repo.fullName}
-                  </a>
-                )}
-                {activity.branch && (
-                  <span class="feed-branch">
-                    <Icon name="branch" size={11} /> {activity.branch}
-                  </span>
-                )}
-                {activity.draft && <span class="feed-label">Draft</span>}
-                {activity.labels?.slice(0, 3).map((label) => (
-                  <span class="feed-label">{label}</span>
-                ))}
-                <time
-                  class="feed-time"
-                  datetime={activity.timestamp}
-                  title={absoluteTime(activity.timestamp)}
-                >
-                  {relativeTime(activity.timestamp)}
-                </time>
-              </p>
-            </div>
-
-            <a
-              class="feed-link"
-              href={activity.url}
-              target="_blank"
-              rel="noreferrer noopener"
-              title="Open on GitHub"
-              aria-label={`Open ${activity.title} on GitHub`}
-            >
-              <Icon name="external" size={14} />
-            </a>
-          </li>
+        {group.preview.map((activity) => (
+          <ActivityItem activity={activity} view={view} />
         ))}
       </ol>
+
+      {group.rest.length > 0 && (
+        <details class="feed-rest">
+          <summary class="feed-show-more">
+            <span class="feed-show-more-label is-closed">Show more</span>
+            <span class="feed-show-more-label is-open">Show less</span>
+            <span class="feed-show-more-count">+{group.rest.length}</span>
+          </summary>
+          <ol class="feed-list feed-list-rest">
+            {group.rest.map((activity) => (
+              <ActivityItem activity={activity} view={view} />
+            ))}
+          </ol>
+        </details>
+      )}
     </section>
   ))}
 </div>

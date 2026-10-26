@@ -1,0 +1,91 @@
+---
+import Icon from './Icon.astro';
+import { activityActionLabel, type Activity, type FeedView } from '../lib/activity';
+import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
+
+interface Props {
+  activity: Activity;
+  view: FeedView;
+}
+
+const { activity, view } = Astro.props;
+
+const icons: Record<Activity['kind'], string> = {
+  push: 'commit',
+  pull: 'pull',
+  issue: 'issue',
+};
+
+function tone(value: Activity): string {
+  if (value.kind === 'push') return 'push';
+  if (value.kind === 'issue') return 'issue';
+  return value.action === 'updated' ? 'pull' : value.action;
+}
+---
+
+<li class="feed-item">
+  <span class="feed-avatar-wrap">
+    <img
+      class="feed-avatar"
+      src={activity.actor.avatarUrl}
+      alt=""
+      width="34"
+      height="34"
+      loading="lazy"
+      decoding="async"
+    />
+    <span class:list={['feed-kind', `is-${tone(activity)}`]}>
+      <Icon name={icons[activity.kind]} size={10} strokeWidth={2.4} />
+    </span>
+  </span>
+
+  <div class="feed-body">
+    <p class="feed-line">
+      <a class="feed-actor" href={activity.actor.htmlUrl} target="_blank" rel="noreferrer noopener">
+        {activity.actor.login}
+      </a>
+      <span class="feed-action">{activityActionLabel(activity)}</span>
+      <a class="feed-title" href={activity.url} target="_blank" rel="noreferrer noopener">
+        {activity.title}
+      </a>
+      {activity.number !== undefined && (
+        <span class="feed-number">#{activity.number}</span>
+      )}
+    </p>
+
+    <p class="feed-sub">
+      {view === 'user' && (
+        <a class="feed-repo" href={repositoryPath(activity.repo.owner.login, activity.repo.name)}>
+          {activity.repo.fullName}
+        </a>
+      )}
+      {activity.branch && (
+        <span class="feed-branch">
+          <Icon name="branch" size={11} /> {activity.branch}
+        </span>
+      )}
+      {activity.draft && <span class="feed-label">Draft</span>}
+      {activity.labels?.slice(0, 3).map((label) => (
+        <span class="feed-label">{label}</span>
+      ))}
+      <time
+        class="feed-time"
+        datetime={activity.timestamp}
+        title={absoluteTime(activity.timestamp)}
+      >
+        {relativeTime(activity.timestamp)}
+      </time>
+    </p>
+  </div>
+
+  <a
+    class="feed-link"
+    href={activity.url}
+    target="_blank"
+    rel="noreferrer noopener"
+    title="Open on GitHub"
+    aria-label={`Open ${activity.title} on GitHub`}
+  >
+    <Icon name="external" size={14} />
+  </a>
+</li>

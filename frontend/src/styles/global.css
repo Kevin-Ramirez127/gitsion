@@ -918,6 +918,56 @@ h3 {
   color: var(--accent);
 }
 
+.feed-show-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 2px;
+  padding: 8px 11px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.feed-show-more::-webkit-details-marker {
+  display: none;
+}
+
+.feed-show-more::marker {
+  content: "";
+}
+
+.feed-show-more:hover {
+  background: var(--text);
+  color: #ffffff;
+}
+
+.feed-show-more-count {
+  padding-left: 8px;
+  border-left: 1px solid currentColor;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.feed-rest .is-open,
+.feed-rest[open] .is-closed {
+  display: none;
+}
+
+.feed-rest[open] .is-open {
+  display: inline;
+}
+
 .feed-more {
   display: flex;
   justify-content: flex-start;
