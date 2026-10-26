@@ -380,6 +380,48 @@ h3 {
   font-size: 11px;
 }
 
+/* --- admin -------------------------------------------------------------- */
+
+.admin-panel {
+  max-width: 660px;
+}
+
+.admin-panel h1 {
+  margin-bottom: 18px;
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+.admin-panel .lede {
+  margin-top: 0;
+  margin-bottom: 24px;
+}
+
+.admin-panel .banner {
+  margin-top: 24px;
+}
+
+.admin-panel code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.admin-manage {
+  margin-bottom: 24px;
+}
+
+.admin-cta {
+  margin-top: 14px;
+}
+
 /* --- flash / banners ---------------------------------------------------- */
 
 .flash {

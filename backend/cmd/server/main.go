@@ -60,7 +60,7 @@ func run() error {
 	tracker := service.NewTracker(st, gh, logger, cfg.SyncInterval, cfg.Concurrency)
 	tracker.Start(ctx)
 
-	handler := api.NewRouter(tracker, logger)
+	handler := api.NewRouter(tracker, logger, cfg.AdminToken)
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           handler,
@@ -80,7 +80,12 @@ func run() error {
 	if cfg.GitHubToken == "" {
 		logger.Warn("GITHUB_TOKEN is not set: public repositories only, limited to 60 GitHub requests/hour")
 	}
-	logger.Info("dashboard is public: no login is required")
+	logger.Info("dashboard is public: reads require no login")
+	if cfg.AdminToken == "" {
+		logger.Warn("ADMIN_TOKEN is not set: write API is disabled (read-only mode)")
+	} else {
+		logger.Info("write API protected by ADMIN_TOKEN")
+	}
 
 	errCh := make(chan error, 1)
 	go func() {

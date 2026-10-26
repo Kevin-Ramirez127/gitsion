@@ -68,8 +68,15 @@ async function main() {
   const config = {
     githubApiURL: (process.env.GITHUB_API_URL || DEFAULT_GITHUB_API_URL).replace(/\/+$/, ''),
     githubToken: (process.env.GITHUB_TOKEN || '').trim(),
+    adminToken: (process.env.ADMIN_TOKEN || '').trim(),
     backendURL: (process.env.BACKEND_URL || DEFAULT_BACKEND_URL).replace(/\/+$/, ''),
   };
+
+  if (!options.dryRun && !config.adminToken) {
+    throw new UsageError(
+      'ADMIN_TOKEN is required to import repositories. Set it in the environment or .env.',
+    );
+  }
 
   let repos;
   let source;
@@ -89,6 +96,22 @@ async function main() {
 
   if (repos.length === 0) {
     console.log(`No repositories found in ${source}.`);
+    return 0;
+  }
+
+  const publicRepos = repos.filter(isPublicRepo);
+  if (publicRepos.length !== repos.length) {
+    const skipped = repos.length - publicRepos.length;
+    console.log(
+      c.dim(
+        `Skipping ${skipped} private or internal repositor${skipped === 1 ? 'y' : 'ies'}: gitsion only tracks public repositories.`,
+      ),
+    );
+    repos = publicRepos;
+  }
+
+  if (repos.length === 0) {
+    console.log('No public repositories to import.');
     return 0;
   }
 
@@ -147,7 +170,7 @@ async function main() {
     }
 
     try {
-      await trackRepository(config.backendURL, repo);
+      await trackRepository(config.backendURL, repo, config.adminToken);
       tracked.add(repo.fullName.toLowerCase());
       console.log(`${c.green('import')} ${label}`);
       summary.imported += 1;
@@ -282,8 +305,9 @@ Options:
 
 Environment:
   BACKEND_URL            gitsion API (default: http://localhost:8080)
-  GITHUB_TOKEN           Optional token for private repos and higher rate limits
+  GITHUB_TOKEN           Optional token for higher rate limits (private repos are skipped)
   GITHUB_API_URL         GitHub API (default: https://api.github.com)
+  ADMIN_TOKEN            Required to import repositories (gitsion admin token)
 
 A .env file in the current directory (or its parent) is loaded automatically.
 The JSON input can be an array of repository strings or GitHub-like objects:
@@ -604,6 +628,12 @@ function repoFromRef(ref) {
   };
 }
 
+function isPublicRepo(repo) {
+  if (repo.private === true) return false;
+  const visibility = String(repo.visibility || '').trim().toLowerCase();
+  return visibility === '' || visibility === 'public';
+}
+
 function parseRepoRef(raw) {
   if (typeof raw !== 'string') return null;
   let input = raw.trim();
@@ -702,12 +732,16 @@ async function loadTrackedSet(backendURL) {
   return tracked;
 }
 
-async function trackRepository(backendURL, repo) {
+async function trackRepository(backendURL, repo, adminToken) {
   let response;
   try {
     response = await fetch(`${backendURL}/api/v1/repos`, {
       method: 'POST',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
+      },
       body: JSON.stringify({ repository: repo.fullName }),
       signal: AbortSignal.timeout(TRACK_TIMEOUT_MS),
     });

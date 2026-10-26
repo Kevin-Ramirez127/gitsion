@@ -13,7 +13,7 @@ mongo: ## Start MongoDB only (for local backend development)
 backend: ## Run the Go API on :8080 (reads ../.env when present)
 	cd backend && go run ./cmd/server
 
-frontend: ## Run the Astro dev server on :4321
+frontend: ## Run the Astro dev server on :4321 (loads ../.env)
 	cd frontend && npm run dev
 
 import: ## Bulk-import repositories (ARGS="https://github.com/org")

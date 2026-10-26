@@ -166,7 +166,10 @@ func (s *server) writeTrackError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_tracked", "repository is not tracked")
 	case errors.Is(err, service.ErrRepoNotFound):
 		writeError(w, http.StatusNotFound, "repository_not_found",
-			"repository was not found, or it is private and no usable GITHUB_TOKEN is configured")
+			"repository was not found or is not visible to the configured GitHub credentials")
+	case errors.Is(err, service.ErrPrivateRepo):
+		writeError(w, http.StatusUnprocessableEntity, "private_repository",
+			"only public repositories can be tracked")
 	case errors.Is(err, github.ErrUnauthorized):
 		s.log.Error("github rejected credentials", "error", err)
 		writeError(w, http.StatusBadGateway, "github_auth_failed", "GitHub rejected the configured token")

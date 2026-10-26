@@ -103,6 +103,58 @@ func TestTrackErrors(t *testing.T) {
 	}
 }
 
+func TestTrackRejectsPrivateRepositories(t *testing.T) {
+	st := newFakeStore()
+	gh := newFakeGitHub()
+	gh.snapshot.Visibility = "private"
+	tr := newTestTracker(st, gh)
+
+	if _, err := tr.Track(context.Background(), "acme/secret"); !errors.Is(err, ErrPrivateRepo) {
+		t.Fatalf("Track error = %v, want ErrPrivateRepo", err)
+	}
+	if _, err := st.Get(context.Background(), "acme", "secret"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("private repository was stored: %v", err)
+	}
+}
+
+func TestListHidesLegacyPrivateRepositories(t *testing.T) {
+	st := newFakeStore()
+	gh := newFakeGitHub()
+	tr := newTestTracker(st, gh)
+
+	if _, err := tr.Track(context.Background(), "acme/public"); err != nil {
+		t.Fatalf("Track: %v", err)
+	}
+	if err := st.Create(context.Background(), &model.Repository{
+		FullName:     "acme/private",
+		Name:         "private",
+		Owner:        model.Owner{Login: "acme", LoginKey: "acme"},
+		Visibility:   "private",
+		TrackedAt:    time.Now().UTC(),
+		LastSyncedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("seed private repository: %v", err)
+	}
+
+	repos, err := tr.List(context.Background(), "")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(repos) != 1 || repos[0].FullName != "acme/public" {
+		t.Fatalf("List = %+v, want only acme/public", repos)
+	}
+	if _, err := tr.Get(context.Background(), "acme", "private"); !errors.Is(err, ErrNotTracked) {
+		t.Fatalf("Get private error = %v, want ErrNotTracked", err)
+	}
+	owners, err := tr.Owners(context.Background())
+	if err != nil {
+		t.Fatalf("Owners: %v", err)
+	}
+	if len(owners) != 1 || owners[0].RepoCount != 1 {
+		t.Fatalf("Owners = %+v, want one repository", owners)
+	}
+}
+
 func TestRefreshCooldown(t *testing.T) {
 	st := newFakeStore()
 	gh := newFakeGitHub()
@@ -317,6 +369,7 @@ type fakeGitHub struct {
 
 func newFakeGitHub() *fakeGitHub {
 	return &fakeGitHub{snapshot: &model.Repository{
+		Visibility:  "public",
 		Description: "fake repo",
 		Stars:       10,
 		Tags:        []model.Tag{{Name: "v1.0.0", CommitSHA: "abc123"}},

@@ -21,23 +21,25 @@ type Tracker interface {
 	Health(ctx context.Context) error
 }
 
-// NewRouter builds the complete handler tree. The dashboard is intentionally
-// unauthenticated: it only displays public repository data.
-func NewRouter(tracker Tracker, log *slog.Logger) http.Handler {
+// NewRouter builds the complete handler tree. Reads are public; every route
+// that changes tracked repositories requires the configured admin token.
+// An empty token puts the API into read-only mode.
+func NewRouter(tracker Tracker, log *slog.Logger, adminToken string) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &server{tracker: tracker, log: log}
+	s := &server{tracker: tracker, log: log, adminToken: adminToken}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.health)
 	mux.HandleFunc("GET /api/v1/repos", s.listRepos)
-	mux.HandleFunc("POST /api/v1/repos", s.trackRepo)
+	mux.HandleFunc("POST /api/v1/repos", s.requireAdmin(s.trackRepo))
 	mux.HandleFunc("GET /api/v1/repos/{owner}/{name}", s.getRepo)
-	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.deleteRepo)
-	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/refresh", s.refreshRepo)
+	mux.HandleFunc("DELETE /api/v1/repos/{owner}/{name}", s.requireAdmin(s.deleteRepo))
+	mux.HandleFunc("POST /api/v1/repos/{owner}/{name}/refresh", s.requireAdmin(s.refreshRepo))
 	mux.HandleFunc("GET /api/v1/owners", s.listOwners)
-	mux.HandleFunc("POST /api/v1/sync", s.syncAll)
+	mux.HandleFunc("POST /api/v1/sync", s.requireAdmin(s.syncAll))
+	mux.HandleFunc("GET /api/v1/admin/session", s.requireAdmin(s.adminSession))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "route not found")
 	})

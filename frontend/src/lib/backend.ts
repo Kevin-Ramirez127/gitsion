@@ -84,6 +84,7 @@ export async function listOwners(): Promise<OwnerSummary[]> {
 export async function trackRepository(repository: string): Promise<Repository> {
   return request<Repository>('/api/v1/repos', {
     method: 'POST',
+    headers: adminHeaders(),
     body: JSON.stringify({ repository }),
   });
 }
@@ -91,19 +92,34 @@ export async function trackRepository(repository: string): Promise<Repository> {
 export async function untrackRepository(owner: string, name: string): Promise<void> {
   await request<void>(
     `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE', headers: adminHeaders() },
   );
 }
 
 export async function refreshRepository(owner: string, name: string): Promise<Repository> {
   return request<Repository>(
     `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/refresh`,
-    { method: 'POST' },
+    { method: 'POST', headers: adminHeaders() },
   );
 }
 
 export async function syncAll(): Promise<void> {
-  await request<{ status: string }>('/api/v1/sync', { method: 'POST' });
+  await request<{ status: string }>('/api/v1/sync', {
+    method: 'POST',
+    headers: adminHeaders(),
+  });
+}
+
+/** Checks a candidate token against the backend without creating a session. */
+export async function verifyAdminSession(token: string): Promise<void> {
+  await request<void>('/api/v1/admin/session', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+function adminHeaders(): Record<string, string> {
+  const token = (process.env.ADMIN_TOKEN ?? '').trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /** Turns an unknown thrown value into a message safe to show in a flash. */

@@ -19,6 +19,7 @@ import type { Repository } from '../../../lib/types';
 
 const ownerParam = Astro.params.owner ?? '';
 const nameParam = Astro.params.name ?? '';
+const isAdmin = Astro.locals.isAdmin;
 const okMessage = Astro.url.searchParams.get('ok');
 const errorMessage = Astro.url.searchParams.get('error');
 
@@ -97,24 +98,28 @@ try {
           <a class="btn btn-sm" href={repo.htmlUrl} target="_blank" rel="noreferrer noopener">
             <Icon name="external" size={14} /> GitHub
           </a>
-          <form method="POST" action="/api/refresh">
-            <input type="hidden" name="owner" value={repo.owner.login} />
-            <input type="hidden" name="name" value={repo.name} />
-            <button class="btn btn-sm" type="submit">
-              <Icon name="refresh" size={14} /> Refresh
-            </button>
-          </form>
-          <form
-            method="POST"
-            action="/api/untrack"
-            data-confirm={`Stop tracking ${repo.fullName}?`}
-          >
-            <input type="hidden" name="owner" value={repo.owner.login} />
-            <input type="hidden" name="name" value={repo.name} />
-            <button class="btn btn-danger btn-sm" type="submit">
-              <Icon name="trash" size={14} /> Remove
-            </button>
-          </form>
+          {isAdmin && (
+            <>
+              <form method="POST" action="/api/refresh">
+                <input type="hidden" name="owner" value={repo.owner.login} />
+                <input type="hidden" name="name" value={repo.name} />
+                <button class="btn btn-sm" type="submit">
+                  <Icon name="refresh" size={14} /> Refresh
+                </button>
+              </form>
+              <form
+                method="POST"
+                action="/api/untrack"
+                data-confirm={`Stop tracking ${repo.fullName}?`}
+              >
+                <input type="hidden" name="owner" value={repo.owner.login} />
+                <input type="hidden" name="name" value={repo.name} />
+                <button class="btn btn-danger btn-sm" type="submit">
+                  <Icon name="trash" size={14} /> Remove
+                </button>
+              </form>
+            </>
+          )}
         </div>
       </header>
 

@@ -1,7 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import ActivityFeed from '../components/ActivityFeed.astro';
-import AddRepoForm from '../components/AddRepoForm.astro';
 import EmptyState from '../components/EmptyState.astro';
 import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
@@ -13,6 +12,8 @@ import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
 
 const searchParams = Astro.url.searchParams;
+const isAdmin = Astro.locals.isAdmin;
+const writesEnabled = Astro.locals.writesEnabled;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
 const query = (searchParams.get('q') ?? '').trim();
 const okMessage = searchParams.get('ok');
@@ -180,7 +181,19 @@ function labelHref(label: string): string {
       </p>
     </div>
     <div class="hero-aside">
-      <AddRepoForm />
+      <div class="track-form">
+        <p class="form-label">Public dashboard</p>
+        <p class="form-hint">
+          Browse freely. This page is read-only; repositories are managed from the admin area.
+        </p>
+        {!writesEnabled ? (
+          <p class="form-hint">This instance is read-only.</p>
+        ) : (
+          <a class="btn btn-primary btn-block admin-cta" href="/admin">
+            {isAdmin ? 'Manage repositories' : 'Admin sign in'}
+          </a>
+        )}
+      </div>
     </div>
   </section>
 
@@ -397,15 +410,9 @@ function labelHref(label: string): string {
   ) : repos.length > 0 ? (
     <EmptyState
       title="No activity captured yet"
-      text="The latest snapshots have no pushes, pull requests or issues to show. Sync the repositories to refresh them."
+      text="The latest snapshots have no pushes, pull requests or issues to show. They refresh automatically in the background, or an administrator can sync them from the admin area."
       icon="clock"
-    >
-      <form method="POST" action="/api/sync">
-        <button class="btn btn-primary" type="submit">
-          <Icon name="refresh" size={15} /> Sync all
-        </button>
-      </form>
-    </EmptyState>
+    />
   ) : ownerFilter ? (
     <EmptyState
       title={`No repositories tracked for ${activeOwner}`}
@@ -417,15 +424,18 @@ function labelHref(label: string): string {
   ) : (
     <EmptyState
       title="Nothing tracked yet"
-      text="Add a public GitHub repository above. gitsion will fetch its latest activity, pull request, tags and open issues, then keep the snapshot fresh in the background."
+      text={
+        writesEnabled
+          ? 'No repositories are tracked yet. An administrator can add public GitHub repositories from the admin area.'
+          : 'No repositories are tracked yet. This dashboard is read-only.'
+      }
       icon="repo"
     >
-      <form method="POST" action="/api/track">
-        <input type="hidden" name="repository" value="withastro/astro" />
-        <button class="btn btn-primary" type="submit">
-          <Icon name="plus" size={15} /> Track withastro/astro
-        </button>
-      </form>
+      {writesEnabled && (
+        <a class="btn btn-primary" href="/admin">
+          {isAdmin ? 'Manage repositories' : 'Admin sign in'}
+        </a>
+      )}
     </EmptyState>
   )}
 
