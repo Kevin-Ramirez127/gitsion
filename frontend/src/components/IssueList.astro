@@ -1,0 +1,49 @@
+---
+import Icon from './Icon.astro';
+import type { Issue } from '../lib/types';
+import { absoluteTime, relativeTime } from '../lib/format';
+
+interface Props {
+  issues: Issue[];
+}
+
+const { issues } = Astro.props;
+---
+
+{issues.length > 0 ? (
+  <ul class="issue-list">
+    {issues.map((issue) => (
+      <li class="issue-item">
+        <span class="issue-icon" aria-hidden="true">
+          <Icon name="issue" size={14} />
+        </span>
+        <div class="issue-body">
+          <a
+            class="issue-title"
+            href={issue.htmlUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            <span class="issue-number">#{issue.number}</span>
+            {issue.title}
+          </a>
+          <div class="issue-meta">
+            <span title={absoluteTime(issue.createdAt)}>
+              opened {relativeTime(issue.createdAt)} by {issue.author.login}
+            </span>
+            {issue.comments > 0 && <span>{issue.comments} comments</span>}
+          </div>
+          {issue.labels.length > 0 && (
+            <div class="issue-labels">
+              {issue.labels.map((label) => (
+                <span class="label">{label}</span>
+              ))}
+            </div>
+          )}
+        </div>
+      </li>
+    ))}
+  </ul>
+) : (
+  <p class="empty-inline">No open issues. The issue tracker is clear.</p>
+)}

@@ -1,0 +1,20 @@
+---
+import Icon from './Icon.astro';
+
+interface Props {
+  title: string;
+  text: string;
+  icon?: string;
+}
+
+const { title, text, icon = 'repo' } = Astro.props;
+---
+
+<div class="empty-state">
+  <div class="empty-icon" aria-hidden="true">
+    <Icon name={icon} size={24} />
+  </div>
+  <h2>{title}</h2>
+  <p>{text}</p>
+  <slot />
+</div>

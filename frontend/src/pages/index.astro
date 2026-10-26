@@ -1,0 +1,450 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ActivityFeed from '../components/ActivityFeed.astro';
+import AddRepoForm from '../components/AddRepoForm.astro';
+import EmptyState from '../components/EmptyState.astro';
+import Flash from '../components/Flash.astro';
+import Icon from '../components/Icon.astro';
+import OwnerChips from '../components/OwnerChips.astro';
+import StatCard from '../components/StatCard.astro';
+import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
+import { ApiError, listOwners, listRepositories } from '../lib/backend';
+import { plainNumber, relativeTime } from '../lib/format';
+import type { OwnerSummary, Repository } from '../lib/types';
+
+const searchParams = Astro.url.searchParams;
+const ownerFilter = (searchParams.get('owner') ?? '').trim();
+const query = (searchParams.get('q') ?? '').trim();
+const okMessage = searchParams.get('ok');
+const errorMessage = searchParams.get('error');
+const showAll = searchParams.get('show') === 'all';
+const view: FeedView = searchParams.get('view') === 'user' ? 'user' : 'project';
+
+const validKinds: ActivityKind[] = ['push', 'pull', 'issue'];
+const selectedKinds = new Set<ActivityKind>(
+  searchParams
+    .getAll('kind')
+    .filter((value): value is ActivityKind => validKinds.includes(value as ActivityKind)),
+);
+const requestedLabels = searchParams.getAll('label');
+
+let repos: Repository[] = [];
+let owners: OwnerSummary[] = [];
+let loadError = '';
+
+try {
+  [repos, owners] = await Promise.all([
+    listRepositories(ownerFilter || undefined),
+    listOwners(),
+  ]);
+} catch (error) {
+  loadError =
+    error instanceof ApiError
+      ? error.message
+      : 'Could not reach the gitsion backend.';
+}
+
+const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
+const searchedRepos =
+  searchTerms.length === 0
+    ? repos
+    : repos.filter((repo) => {
+        const haystack = [
+          repo.name,
+          repo.fullName,
+          repo.owner.login,
+          ...(repo.contributors ?? []).map((contributor) => contributor.login),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return searchTerms.every((term) => haystack.includes(term));
+      });
+
+const totalIssues = searchedRepos.reduce((total, repo) => total + repo.issues.length, 0);
+const openLatestPrs = searchedRepos.filter(
+  (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
+).length;
+const lastSync = searchedRepos.reduce<string>((latest, repo) => {
+  if (!repo.lastSyncedAt) return latest;
+  if (!latest) return repo.lastSyncedAt;
+  return new Date(repo.lastSyncedAt) > new Date(latest) ? repo.lastSyncedAt : latest;
+}, '');
+const activeOwner =
+  owners.find((owner) => owner.login.toLowerCase() === ownerFilter.toLowerCase())?.login ??
+  ownerFilter;
+const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
+
+const allActivities = buildActivityFeed(searchedRepos);
+
+const availableLabels = [
+  ...new Set(searchedRepos.flatMap((repo) => repo.issues.flatMap((issue) => issue.labels))),
+].sort((a, b) => a.localeCompare(b));
+const availableLabelSet = new Set(availableLabels);
+const selectedLabels = new Set(requestedLabels.filter((label) => availableLabelSet.has(label)));
+
+const kindCounts: Record<ActivityKind, number> = { push: 0, pull: 0, issue: 0 };
+const labelCounts = new Map<string, number>();
+
+for (const activity of allActivities) {
+  kindCounts[activity.kind] += 1;
+
+  if (activity.kind === 'issue') {
+    for (const label of new Set(activity.labels ?? [])) {
+      labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+    }
+  }
+}
+
+const activities = allActivities.filter((activity) => {
+  if (selectedKinds.size > 0 && !selectedKinds.has(activity.kind)) return false;
+  if (selectedLabels.size > 0) {
+    if (activity.kind !== 'issue') return false;
+    if (!(activity.labels ?? []).some((label) => selectedLabels.has(label))) return false;
+  }
+  return true;
+});
+
+const visibleActivities = showAll ? activities : activities.slice(0, FEED_PAGE_SIZE);
+const truncated = !showAll && activities.length > FEED_PAGE_SIZE;
+const latestActivity = activities[0];
+const hasFilters = selectedKinds.size > 0 || selectedLabels.size > 0;
+const activitySummary = hasFilters
+  ? `${plainNumber(activities.length)} of ${plainNumber(allActivities.length)} activities`
+  : `${plainNumber(activities.length)} ${activities.length === 1 ? 'activity' : 'activities'}`;
+
+interface FeedQuery {
+  owner: string;
+  q: string;
+  view: FeedView;
+  kinds: ActivityKind[];
+  labels: string[];
+  showAll: boolean;
+}
+
+function feedQuery(overrides: Partial<FeedQuery> = {}): string {
+  const owner = overrides.owner ?? ownerFilter;
+  const q = overrides.q ?? query;
+  const nextView = overrides.view ?? view;
+  const kinds = overrides.kinds ?? [...selectedKinds];
+  const labels = overrides.labels ?? [...selectedLabels];
+  const all = overrides.showAll ?? showAll;
+
+  const params = new URLSearchParams();
+  if (owner) params.set('owner', owner);
+  if (q) params.set('q', q);
+  if (nextView === 'user') params.set('view', 'user');
+  for (const kind of kinds) params.append('kind', kind);
+  for (const label of labels) params.append('label', label);
+  if (all) params.set('show', 'all');
+
+  const search = params.toString();
+  return search ? `/?${search}` : '/';
+}
+
+function kindHref(kind: ActivityKind | null): string {
+  if (!kind) return feedQuery({ kinds: [] });
+  const next = new Set(selectedKinds);
+  if (next.has(kind)) {
+    next.delete(kind);
+  } else {
+    next.add(kind);
+  }
+  if (next.size === validKinds.length) next.clear();
+  return feedQuery({ kinds: [...next] });
+}
+
+function labelHref(label: string): string {
+  const next = new Set(selectedLabels);
+  if (next.has(label)) {
+    next.delete(label);
+  } else {
+    next.add(label);
+  }
+  return feedQuery({ labels: [...next] });
+}
+---
+
+<Layout>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <Icon name="commit" size={13} /> Activity feed
+      </p>
+      <h1>
+        Everything that moved,<br />
+        <em>newest first.</em>
+      </h1>
+      <p class="lede">
+        Pushes, pull requests and issues from the repositories you track, gathered into one
+        calm feed. Data is pulled from the public GitHub API and cached in MongoDB.
+      </p>
+    </div>
+    <div class="hero-aside">
+      <AddRepoForm />
+    </div>
+  </section>
+
+  {okMessage && <Flash kind="success" message={okMessage} />}
+  {errorMessage && <Flash kind="error" message={errorMessage} />}
+
+  {loadError && (
+    <div class="banner" role="alert">
+      <Icon name="alert" size={18} />
+      <div>
+        <strong>Could not load the dashboard</strong>
+        <p>{loadError}</p>
+      </div>
+    </div>
+  )}
+
+  <div id="dashboard">
+  <form class="search-form" method="GET" action="/" role="search" data-feed-search>
+    <label class="search-label" for="feed-search">Search</label>
+    <div class="search-row">
+      <input
+        class="input search-input"
+        id="feed-search"
+        type="search"
+        name="q"
+        value={query}
+        placeholder="Project, owner or contributor"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn btn-primary" type="submit">
+        <Icon name="search" size={14} /> Search
+      </button>
+      {query ? <a class="btn btn-ghost" href={feedQuery({ q: '' })}>Clear</a> : null}
+    </div>
+    <p class="search-hint">
+      {query
+        ? `${plainNumber(searchedRepos.length)} of ${plainNumber(repos.length)} projects match “${query}”.`
+        : 'Matches repository names, owners and cached contributors.'}
+    </p>
+    {ownerFilter && <input type="hidden" name="owner" value={ownerFilter} />}
+    {view === 'user' && <input type="hidden" name="view" value="user" />}
+    {[...selectedKinds].map((kind) => <input type="hidden" name="kind" value={kind} />)}
+    {[...selectedLabels].map((label) => <input type="hidden" name="label" value={label} />)}
+    {showAll && <input type="hidden" name="show" value="all" />}
+  </form>
+
+  <section class="stats" aria-label="Dashboard summary">
+    <StatCard
+      label="Activities"
+      value={plainNumber(allActivities.length)}
+      hint="pushes, pull requests & issues"
+      icon="commit"
+    />
+    <StatCard
+      label="Repositories"
+      value={plainNumber(searchedRepos.length)}
+      hint={
+        query
+          ? `matching “${query}”`
+          : ownerFilter
+            ? `filtered by ${activeOwner}`
+            : lastSync
+              ? `last sync ${relativeTime(lastSync)}`
+              : 'tracked repositories'
+      }
+      icon="repo"
+    />
+    <StatCard
+      label="Open issues"
+      value={plainNumber(totalIssues)}
+      hint="up to 25 per repository"
+      icon="issue"
+    />
+    <StatCard
+      label="Repos with open PR"
+      value={plainNumber(openLatestPrs)}
+      hint="latest PR per repository"
+      icon="pull"
+    />
+  </section>
+
+  <div class="feed-controls">
+    {owners.length > 0 && (
+      <details class="filter-section" data-collapsible="owners">
+        <summary class="filter-summary">
+          <span class="filter-summary-title">
+            <Icon name="users" size={13} /> Owners
+          </span>
+          <span class="filter-summary-note">
+            {activeOwner
+              ? `Filtered: ${activeOwner}`
+              : `${plainNumber(owners.length)} owners · ${plainNumber(totalTracked)} projects`}
+          </span>
+          <span class="filter-toggle" aria-hidden="true"></span>
+        </summary>
+        <OwnerChips
+          owners={owners}
+          activeOwner={activeOwner}
+          total={totalTracked}
+          hrefFor={(login) => feedQuery({ owner: login ?? '' })}
+        />
+      </details>
+    )}
+
+    {repos.length > 0 && (
+      <details class="filters" data-collapsible="filters">
+        <summary class="filters-head">
+          <span class="filters-title" id="filters-title">Filter feed</span>
+          <span class="filters-status">{activitySummary}</span>
+          <span class="filter-toggle" aria-hidden="true"></span>
+        </summary>
+
+        <div class="filters-body">
+          <div class="filter-row">
+            <span class="filter-label">View</span>
+            <a
+              class:list={['filter-chip', { 'is-active': view === 'project' }]}
+              href={feedQuery({ view: 'project' })}
+            >
+              By project
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': view === 'user' }]}
+              href={feedQuery({ view: 'user' })}
+            >
+              By person
+            </a>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">Activity</span>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.size === 0 }]}
+              href={kindHref(null)}
+            >
+              All <span class="filter-count">{plainNumber(allActivities.length)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('push') }]}
+              href={kindHref('push')}
+            >
+              Pushes <span class="filter-count">{plainNumber(kindCounts.push)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('pull') }]}
+              href={kindHref('pull')}
+            >
+              Pull requests <span class="filter-count">{plainNumber(kindCounts.pull)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('issue') }]}
+              href={kindHref('issue')}
+            >
+              Issues <span class="filter-count">{plainNumber(kindCounts.issue)}</span>
+            </a>
+          </div>
+
+          {availableLabels.length > 0 && (
+            <div class="filter-row">
+              <span class="filter-label">Issue labels</span>
+              {availableLabels.map((label) => (
+                <a
+                  class:list={['filter-chip', { 'is-active': selectedLabels.has(label) }]}
+                  href={labelHref(label)}
+                >
+                  {label} <span class="filter-count">{plainNumber(labelCounts.get(label) ?? 0)}</span>
+                </a>
+              ))}
+            </div>
+          )}
+
+          {hasFilters && (
+            <div class="filters-actions">
+              <a class="filters-clear" href={feedQuery({ kinds: [], labels: [] })}>
+                Clear filters
+              </a>
+            </div>
+          )}
+        </div>
+      </details>
+    )}
+  </div>
+
+  <div class="section-head">
+    <h2 class="section-title" data-feed-heading tabindex="-1">
+      {query ? `Matching “${query}”` : activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
+    </h2>
+    <span class="section-note" data-feed-summary>
+      {activitySummary}
+      {truncated && ` · showing ${plainNumber(visibleActivities.length)}`}
+      {latestActivity && ` · latest ${relativeTime(latestActivity.timestamp)}`}
+    </span>
+  </div>
+
+  {repos.length > 0 && activities.length > 0 ? (
+    <ActivityFeed activities={visibleActivities} view={view} />
+  ) : repos.length > 0 && allActivities.length > 0 ? (
+    <EmptyState
+      title="No activity matches these filters"
+      text="Try widening the activity type or issue label filters to see more of the feed."
+      icon="filter"
+    >
+      <a class="btn" href={feedQuery({ kinds: [], labels: [] })}>Clear filters</a>
+    </EmptyState>
+  ) : query && repos.length > 0 ? (
+    <EmptyState
+      title={`No projects match “${query}”`}
+      text="Search covers project names, owners and cached contributors. Try a shorter term or clear the search."
+      icon="search"
+    >
+      <a class="btn" href={feedQuery({ q: '' })}>Clear search</a>
+    </EmptyState>
+  ) : repos.length > 0 ? (
+    <EmptyState
+      title="No activity captured yet"
+      text="The latest snapshots have no pushes, pull requests or issues to show. Sync the repositories to refresh them."
+      icon="clock"
+    >
+      <form method="POST" action="/api/sync">
+        <button class="btn btn-primary" type="submit">
+          <Icon name="refresh" size={15} /> Sync all
+        </button>
+      </form>
+    </EmptyState>
+  ) : ownerFilter ? (
+    <EmptyState
+      title={`No repositories tracked for ${activeOwner}`}
+      text="The owner filter matched nothing. Clear it to see all tracked repositories and their activity."
+      icon="users"
+    >
+      <a class="btn" href="/">Clear filter</a>
+    </EmptyState>
+  ) : (
+    <EmptyState
+      title="Nothing tracked yet"
+      text="Add a public GitHub repository above. gitsion will fetch its latest activity, pull request, tags and open issues, then keep the snapshot fresh in the background."
+      icon="repo"
+    >
+      <form method="POST" action="/api/track">
+        <input type="hidden" name="repository" value="withastro/astro" />
+        <button class="btn btn-primary" type="submit">
+          <Icon name="plus" size={15} /> Track withastro/astro
+        </button>
+      </form>
+    </EmptyState>
+  )}
+
+  {activities.length > FEED_PAGE_SIZE && (
+    <div class="feed-more">
+      {showAll ? (
+        <a class="btn btn-ghost" href={feedQuery({ showAll: false })}>
+          Show latest {plainNumber(FEED_PAGE_SIZE)}
+        </a>
+      ) : (
+        <a class="btn" href={feedQuery({ showAll: true })}>
+          Show all {plainNumber(activities.length)} activities
+        </a>
+      )}
+    </div>
+  )}
+  </div>
+
+  <p id="feed-announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></p>
+
+  <script src="/feed.js" defer></script>
+</Layout>

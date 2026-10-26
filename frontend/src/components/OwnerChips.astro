@@ -1,0 +1,35 @@
+---
+import type { OwnerSummary } from '../lib/types';
+
+interface Props {
+  owners: OwnerSummary[];
+  activeOwner?: string;
+  total: number;
+  hrefFor?: (login: string | null) => string;
+}
+
+const { owners, activeOwner = '', total, hrefFor } = Astro.props;
+const active = activeOwner.toLowerCase();
+const ownerHref =
+  hrefFor ?? ((login: string | null) => (login ? `/?owner=${encodeURIComponent(login)}` : '/'));
+---
+
+{owners.length > 0 && (
+  <nav class="owner-filter" aria-label="Filter repositories by owner">
+    <a class:list={['chip', { 'is-active': !active }]} href={ownerHref(null)}>
+      All
+      <span class="chip-count">{total}</span>
+    </a>
+    {owners.map((owner) => (
+      <a
+        class:list={['chip', { 'is-active': active === owner.login.toLowerCase() }]}
+        href={ownerHref(owner.login)}
+        aria-current={active === owner.login.toLowerCase() ? 'page' : undefined}
+      >
+        <img class="chip-avatar" src={owner.avatarUrl} alt="" width="20" height="20" loading="eager" decoding="async" />
+        {owner.login}
+        <span class="chip-count">{owner.repoCount}</span>
+      </a>
+    ))}
+  </nav>
+)}

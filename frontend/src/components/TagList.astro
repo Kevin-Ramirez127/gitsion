@@ -1,0 +1,27 @@
+---
+import Icon from './Icon.astro';
+import type { Tag } from '../lib/types';
+import { shortSha } from '../lib/format';
+
+interface Props {
+  tags: Tag[];
+}
+
+const { tags } = Astro.props;
+---
+
+{tags.length > 0 ? (
+  <div class="tag-list">
+    {tags.map((tag) => (
+      <div class="tag-item">
+        <span class="tag-name" title={tag.name}>
+          <Icon name="tag" size={12} />
+          {tag.name}
+        </span>
+        {tag.commitSha && <code class="tag-sha">{shortSha(tag.commitSha)}</code>}
+      </div>
+    ))}
+  </div>
+) : (
+  <p class="empty-inline">This repository has no tags.</p>
+)}

@@ -1,0 +1,21 @@
+---
+import Icon from './Icon.astro';
+
+interface Props {
+  label: string;
+  value: string;
+  hint?: string;
+  icon: string;
+}
+
+const { label, value, hint, icon } = Astro.props;
+---
+
+<div class="stat-card">
+  <div class="stat-label">
+    <Icon name={icon} size={13} />
+    {label}
+  </div>
+  <div class="stat-value">{value}</div>
+  {hint && <div class="stat-hint">{hint}</div>}
+</div>
