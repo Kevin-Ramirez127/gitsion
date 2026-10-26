@@ -177,6 +177,7 @@ function labelHref(label: string): string {
     </div>
   )}
 
+  <div id="dashboard">
   <section class="stats" aria-label="Dashboard summary">
     <StatCard
       label="Activities"
@@ -286,10 +287,10 @@ function labelHref(label: string): string {
   )}
 
   <div class="section-head">
-    <h2 class="section-title">
+    <h2 class="section-title" data-feed-heading tabindex="-1">
       {activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
     </h2>
-    <span class="section-note">
+    <span class="section-note" data-feed-summary>
       {activitySummary}
       {truncated && ` · showing ${plainNumber(visibleActivities.length)}`}
       {latestActivity && ` · latest ${relativeTime(latestActivity.timestamp)}`}
@@ -354,4 +355,9 @@ function labelHref(label: string): string {
       )}
     </div>
   )}
+  </div>
+
+  <p id="feed-announcer" class="visually-hidden" aria-live="polite" aria-atomic="true"></p>
+
+  <script src="/feed.js" defer></script>
 </Layout>

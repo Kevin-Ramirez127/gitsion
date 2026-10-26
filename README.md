@@ -18,7 +18,7 @@ enables private repositories.
 - Activity feed of pushes, pull requests and issues across tracked repositories, newest-first inside each group, with actor avatars, labels, relative times and a show-all view.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
-- Always-visible filter bar for activity type and issue labels, plus an owner filter. Links carry the active filters so they can be combined.
+- Always-visible filter bar for activity type and issue labels, plus an owner filter. Links carry the active filters so they can be combined; filter changes update the dashboard in place without a full page reload.
 - Repository detail page with the latest PR (open/merged/closed), up to 10 tags, open issues with labels, owner card and repository facts.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
 - Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.

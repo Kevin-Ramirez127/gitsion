@@ -686,6 +686,15 @@ h3 {
 
 /* --- activity feed ------------------------------------------------------ */
 
+#dashboard {
+  transition: opacity 0.15s ease;
+}
+
+#dashboard[aria-busy="true"] {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .feed {
   display: flex;
   flex-direction: column;
