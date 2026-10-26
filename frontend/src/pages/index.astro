@@ -7,15 +7,26 @@ import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
 import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
-import { buildActivityFeed, FEED_PAGE_SIZE } from '../lib/activity';
+import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
 
-const ownerFilter = (Astro.url.searchParams.get('owner') ?? '').trim();
-const okMessage = Astro.url.searchParams.get('ok');
-const errorMessage = Astro.url.searchParams.get('error');
-const showAll = Astro.url.searchParams.get('show') === 'all';
+const searchParams = Astro.url.searchParams;
+const ownerFilter = (searchParams.get('owner') ?? '').trim();
+const okMessage = searchParams.get('ok');
+const errorMessage = searchParams.get('error');
+const showAll = searchParams.get('show') === 'all';
+const view: FeedView = searchParams.get('view') === 'user' ? 'user' : 'project';
+
+const validKinds: ActivityKind[] = ['push', 'pull', 'issue'];
+const selectedKinds = new Set<ActivityKind>(
+  searchParams
+    .getAll('kind')
+    .filter((value): value is ActivityKind => validKinds.includes(value as ActivityKind)),
+);
+const requestedTags = searchParams.getAll('tag');
+const requestedLabels = searchParams.getAll('label');
 
 let repos: Repository[] = [];
 let owners: OwnerSummary[] = [];
@@ -47,17 +58,120 @@ const activeOwner =
   ownerFilter;
 const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
 
-const activities = buildActivityFeed(repos);
+const allActivities = buildActivityFeed(repos);
+
+const availableTags = [...new Set(repos.flatMap((repo) => repo.tags.map((tag) => tag.name)))].sort(
+  (a, b) => a.localeCompare(b, 'en', { numeric: true }),
+);
+const availableTagSet = new Set(availableTags);
+const selectedTags = new Set(requestedTags.filter((tag) => availableTagSet.has(tag)));
+
+const availableLabels = [
+  ...new Set(repos.flatMap((repo) => repo.issues.flatMap((issue) => issue.labels))),
+].sort((a, b) => a.localeCompare(b));
+const availableLabelSet = new Set(availableLabels);
+const selectedLabels = new Set(requestedLabels.filter((label) => availableLabelSet.has(label)));
+
+const kindCounts: Record<ActivityKind, number> = { push: 0, pull: 0, issue: 0 };
+const tagCounts = new Map<string, number>();
+const labelCounts = new Map<string, number>();
+
+for (const activity of allActivities) {
+  kindCounts[activity.kind] += 1;
+
+  for (const tag of activity.repo.tags) {
+    tagCounts.set(tag.name, (tagCounts.get(tag.name) ?? 0) + 1);
+  }
+
+  if (activity.kind === 'issue') {
+    for (const label of new Set(activity.labels ?? [])) {
+      labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+    }
+  }
+}
+
+const activities = allActivities.filter((activity) => {
+  if (selectedKinds.size > 0 && !selectedKinds.has(activity.kind)) return false;
+  if (
+    selectedTags.size > 0 &&
+    !activity.repo.tags.some((tag) => selectedTags.has(tag.name))
+  ) {
+    return false;
+  }
+  if (selectedLabels.size > 0) {
+    if (activity.kind !== 'issue') return false;
+    if (!(activity.labels ?? []).some((label) => selectedLabels.has(label))) return false;
+  }
+  return true;
+});
+
 const visibleActivities = showAll ? activities : activities.slice(0, FEED_PAGE_SIZE);
 const truncated = !showAll && activities.length > FEED_PAGE_SIZE;
 const latestActivity = activities[0];
+const hasFilters = selectedKinds.size > 0 || selectedTags.size > 0 || selectedLabels.size > 0;
+const activitySummary = hasFilters
+  ? `${plainNumber(activities.length)} of ${plainNumber(allActivities.length)} activities`
+  : `${plainNumber(activities.length)} ${activities.length === 1 ? 'activity' : 'activities'}`;
 
-function feedHref(all: boolean): string {
+interface FeedQuery {
+  owner: string;
+  view: FeedView;
+  kinds: ActivityKind[];
+  tags: string[];
+  labels: string[];
+  showAll: boolean;
+}
+
+function feedQuery(overrides: Partial<FeedQuery> = {}): string {
+  const owner = overrides.owner ?? ownerFilter;
+  const nextView = overrides.view ?? view;
+  const kinds = overrides.kinds ?? [...selectedKinds];
+  const tags = overrides.tags ?? [...selectedTags];
+  const labels = overrides.labels ?? [...selectedLabels];
+  const all = overrides.showAll ?? showAll;
+
   const params = new URLSearchParams();
-  if (ownerFilter) params.set('owner', ownerFilter);
+  if (owner) params.set('owner', owner);
+  if (nextView === 'user') params.set('view', 'user');
+  for (const kind of kinds) params.append('kind', kind);
+  for (const tag of tags) params.append('tag', tag);
+  for (const label of labels) params.append('label', label);
   if (all) params.set('show', 'all');
+
   const query = params.toString();
   return query ? `/?${query}` : '/';
+}
+
+function kindHref(kind: ActivityKind | null): string {
+  if (!kind) return feedQuery({ kinds: [] });
+  const next = new Set(selectedKinds);
+  if (next.has(kind)) {
+    next.delete(kind);
+  } else {
+    next.add(kind);
+  }
+  if (next.size === validKinds.length) next.clear();
+  return feedQuery({ kinds: [...next] });
+}
+
+function tagHref(tag: string): string {
+  const next = new Set(selectedTags);
+  if (next.has(tag)) {
+    next.delete(tag);
+  } else {
+    next.add(tag);
+  }
+  return feedQuery({ tags: [...next] });
+}
+
+function labelHref(label: string): string {
+  const next = new Set(selectedLabels);
+  if (next.has(label)) {
+    next.delete(label);
+  } else {
+    next.add(label);
+  }
+  return feedQuery({ labels: [...next] });
 }
 ---
 
@@ -97,7 +211,7 @@ function feedHref(all: boolean): string {
   <section class="stats" aria-label="Dashboard summary">
     <StatCard
       label="Activities"
-      value={plainNumber(activities.length)}
+      value={plainNumber(allActivities.length)}
       hint="pushes, pull requests & issues"
       icon="commit"
     />
@@ -129,19 +243,114 @@ function feedHref(all: boolean): string {
 
   <OwnerChips owners={owners} activeOwner={activeOwner} total={totalTracked} />
 
+  {repos.length > 0 && (
+    <section class="filters" aria-labelledby="filters-title">
+      <div class="filters-head">
+        <h2 class="filters-title" id="filters-title">Filter feed</h2>
+        {hasFilters ? (
+          <a class="filters-clear" href={feedQuery({ kinds: [], tags: [], labels: [] })}>
+            Clear filters
+          </a>
+        ) : (
+          <span class="filters-status">{activitySummary}</span>
+        )}
+      </div>
+
+      <div class="filter-row">
+        <span class="filter-label">View</span>
+        <a
+          class:list={['filter-chip', { 'is-active': view === 'project' }]}
+          href={feedQuery({ view: 'project' })}
+        >
+          By project
+        </a>
+        <a
+          class:list={['filter-chip', { 'is-active': view === 'user' }]}
+          href={feedQuery({ view: 'user' })}
+        >
+          By person
+        </a>
+      </div>
+
+      <div class="filter-row">
+        <span class="filter-label">Activity</span>
+        <a
+          class:list={['filter-chip', { 'is-active': selectedKinds.size === 0 }]}
+          href={kindHref(null)}
+        >
+          All <span class="filter-count">{plainNumber(allActivities.length)}</span>
+        </a>
+        <a
+          class:list={['filter-chip', { 'is-active': selectedKinds.has('push') }]}
+          href={kindHref('push')}
+        >
+          Pushes <span class="filter-count">{plainNumber(kindCounts.push)}</span>
+        </a>
+        <a
+          class:list={['filter-chip', { 'is-active': selectedKinds.has('pull') }]}
+          href={kindHref('pull')}
+        >
+          Pull requests <span class="filter-count">{plainNumber(kindCounts.pull)}</span>
+        </a>
+        <a
+          class:list={['filter-chip', { 'is-active': selectedKinds.has('issue') }]}
+          href={kindHref('issue')}
+        >
+          Issues <span class="filter-count">{plainNumber(kindCounts.issue)}</span>
+        </a>
+      </div>
+
+      {availableTags.length > 0 && (
+        <div class="filter-row">
+          <span class="filter-label">Repository tags</span>
+          {availableTags.map((tag) => (
+            <a
+              class:list={['filter-chip', { 'is-active': selectedTags.has(tag) }]}
+              href={tagHref(tag)}
+            >
+              {tag} <span class="filter-count">{plainNumber(tagCounts.get(tag) ?? 0)}</span>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {availableLabels.length > 0 && (
+        <div class="filter-row">
+          <span class="filter-label">Issue labels</span>
+          {availableLabels.map((label) => (
+            <a
+              class:list={['filter-chip', { 'is-active': selectedLabels.has(label) }]}
+              href={labelHref(label)}
+            >
+              {label} <span class="filter-count">{plainNumber(labelCounts.get(label) ?? 0)}</span>
+            </a>
+          ))}
+        </div>
+      )}
+    </section>
+  )}
+
   <div class="section-head">
     <h2 class="section-title">
       {activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
     </h2>
     <span class="section-note">
-      {plainNumber(activities.length)} {activities.length === 1 ? 'activity' : 'activities'}
+      {activitySummary}
       {truncated && ` · showing ${plainNumber(visibleActivities.length)}`}
       {latestActivity && ` · latest ${relativeTime(latestActivity.timestamp)}`}
     </span>
   </div>
 
   {repos.length > 0 && activities.length > 0 ? (
-    <ActivityFeed activities={visibleActivities} />
+    <ActivityFeed activities={visibleActivities} view={view} />
+  ) : repos.length > 0 && allActivities.length > 0 ? (
+    <EmptyState
+      title="No activity matches these filters"
+      text="Try widening the activity type, repository tag or issue label filters to see more of the feed."
+      icon="filter"
+    >
+      <a class="btn" href={feedQuery({ kinds: [], tags: [], labels: [] })}>Clear filters</a>
+    </EmptyState>
   ) : repos.length > 0 ? (
     <EmptyState
       title="No activity captured yet"
@@ -180,11 +389,11 @@ function feedHref(all: boolean): string {
   {activities.length > FEED_PAGE_SIZE && (
     <div class="feed-more">
       {showAll ? (
-        <a class="btn btn-ghost" href={feedHref(false)}>
+        <a class="btn btn-ghost" href={feedQuery({ showAll: false })}>
           Show latest {plainNumber(FEED_PAGE_SIZE)}
         </a>
       ) : (
-        <a class="btn" href={feedHref(true)}>
+        <a class="btn" href={feedQuery({ showAll: true })}>
           Show all {plainNumber(activities.length)} activities
         </a>
       )}

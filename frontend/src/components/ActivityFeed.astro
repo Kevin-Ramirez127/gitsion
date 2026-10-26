@@ -2,17 +2,19 @@
 import Icon from './Icon.astro';
 import {
   activityActionLabel,
-  groupActivitiesByDay,
+  groupActivities,
   type Activity,
+  type FeedView,
 } from '../lib/activity';
 import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
 
 interface Props {
   activities: Activity[];
+  view: FeedView;
 }
 
-const { activities } = Astro.props;
-const groups = groupActivitiesByDay(activities);
+const { activities, view } = Astro.props;
+const groups = groupActivities(activities, view);
 
 const icons: Record<Activity['kind'], string> = {
   push: 'commit',
@@ -28,9 +30,35 @@ function tone(activity: Activity): string {
 ---
 
 <div class="feed">
-  {groups.map((group) => (
-    <section class="feed-day" aria-labelledby={`feed-day-${group.key}`}>
-      <h3 class="feed-day-label" id={`feed-day-${group.key}`}>{group.label}</h3>
+  {groups.map((group, index) => (
+    <section class="feed-group" aria-labelledby={`feed-group-${index}`}>
+      <header class="feed-group-head">
+        <div class="feed-group-id">
+          <img
+            class="feed-group-avatar"
+            src={group.avatarUrl}
+            alt=""
+            width="28"
+            height="28"
+            loading="lazy"
+            decoding="async"
+          />
+          <a
+            class="feed-group-name"
+            id={`feed-group-${index}`}
+            href={group.href}
+            target={view === 'user' ? '_blank' : undefined}
+            rel={view === 'user' ? 'noreferrer noopener' : undefined}
+          >
+            {group.label}
+          </a>
+        </div>
+        <span class="feed-group-meta">
+          {group.activities.length} {group.activities.length === 1 ? 'activity' : 'activities'}
+          · latest {relativeTime(group.latest)}
+        </span>
+      </header>
+
       <ol class="feed-list">
         {group.activities.map((activity) => (
           <li class="feed-item">
@@ -64,9 +92,11 @@ function tone(activity: Activity): string {
               </p>
 
               <p class="feed-sub">
-                <a class="feed-repo" href={repositoryPath(activity.repo.owner.login, activity.repo.name)}>
-                  {activity.repo.fullName}
-                </a>
+                {view === 'user' && (
+                  <a class="feed-repo" href={repositoryPath(activity.repo.owner.login, activity.repo.name)}>
+                    {activity.repo.fullName}
+                  </a>
+                )}
                 {activity.branch && (
                   <span class="feed-branch">
                     <Icon name="branch" size={11} /> {activity.branch}

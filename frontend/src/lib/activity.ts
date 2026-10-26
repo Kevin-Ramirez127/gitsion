@@ -1,10 +1,12 @@
 import type { Issue, PullRequest, Repository, User } from './types';
+import { repositoryPath } from './format';
 
 /** How many activities the dashboard shows before offering the full feed. */
 export const FEED_PAGE_SIZE = 100;
 
 export type ActivityKind = 'push' | 'pull' | 'issue';
 export type ActivityAction = 'pushed' | 'opened' | 'updated' | 'merged' | 'closed';
+export type FeedView = 'project' | 'user';
 
 export interface Activity {
   /** Stable identifier, unique across repositories. */
@@ -24,9 +26,11 @@ export interface Activity {
 }
 
 export interface ActivityGroup {
-  /** UTC calendar day, `YYYY-MM-DD`. */
   key: string;
   label: string;
+  href: string;
+  avatarUrl: string;
+  latest: string;
   activities: Activity[];
 }
 
@@ -148,49 +152,49 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
   return activities;
 }
 
-const dayFormatter = new Intl.DateTimeFormat('en', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-});
-
-function dayKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-/** Groups a sorted activity list into UTC calendar days, newest first. */
-export function groupActivitiesByDay(
+/**
+ * Groups a newest-first activity list by project or by actor. Group order
+ * follows the newest activity in each group; activities stay chronological
+ * inside a group.
+ */
+export function groupActivities(
   activities: Activity[],
-  now: Date = new Date(),
+  view: FeedView,
 ): ActivityGroup[] {
-  const today = dayKey(now);
-  const yesterdayDate = new Date(now);
-  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
-  const yesterday = dayKey(yesterdayDate);
+  const groups = new Map<string, ActivityGroup>();
 
-  const groups = new Map<string, Activity[]>();
   for (const activity of activities) {
-    const key = activity.timestamp.slice(0, 10);
-    const list = groups.get(key);
-    if (list) {
-      list.push(activity);
-    } else {
-      groups.set(key, [activity]);
+    const key =
+      view === 'project'
+        ? `project:${activity.repo.fullName}`
+        : `user:${activity.actor.login.toLowerCase()}`;
+
+    let group = groups.get(key);
+    if (!group) {
+      group =
+        view === 'project'
+          ? {
+              key,
+              label: activity.repo.fullName,
+              href: repositoryPath(activity.repo.owner.login, activity.repo.name),
+              avatarUrl: activity.repo.owner.avatarUrl,
+              latest: activity.timestamp,
+              activities: [],
+            }
+          : {
+              key,
+              label: activity.actor.login,
+              href: activity.actor.htmlUrl,
+              avatarUrl: activity.actor.avatarUrl,
+              latest: activity.timestamp,
+              activities: [],
+            };
+      groups.set(key, group);
     }
+    group.activities.push(activity);
   }
 
-  return [...groups].map(([key, items]) => ({
-    key,
-    label:
-      key === today
-        ? 'Today'
-        : key === yesterday
-          ? 'Yesterday'
-          : dayFormatter.format(new Date(`${key}T00:00:00Z`)),
-    activities: items,
-  }));
+  return [...groups.values()];
 }
 
 /** Human-readable verb phrase shown before an activity title. */
