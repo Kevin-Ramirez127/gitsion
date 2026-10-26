@@ -58,6 +58,7 @@ export interface Repository {
   latestPr: PullRequest | null;
   tags: Tag[];
   issues: Issue[];
+  contributors: User[];
   trackedAt: string;
   lastSyncedAt: string;
   lastSyncAttempt: string;

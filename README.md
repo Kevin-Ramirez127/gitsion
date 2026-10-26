@@ -18,7 +18,8 @@ enables private repositories.
 - Activity feed of pushes, pull requests and issues across tracked repositories, newest-first inside each group, with actor avatars, labels, relative times and a show-all view.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
-- Always-visible filter bar for activity type and issue labels, plus an owner filter. Links carry the active filters so they can be combined; filter changes update the dashboard in place without a full page reload.
+- Always-visible search bar that matches project names, owners and cached contributors. Search combines with the feed filters and updates the dashboard in place.
+- Feed filters for activity type and issue labels, plus an owner filter. Both sections start collapsed and remember their open state across in-place updates. Links carry the active filters so they can be combined.
 - Repository detail page with the latest PR (open/merged/closed), up to 10 tags, open issues with labels, owner card and repository facts.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
 - Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.
@@ -38,14 +39,17 @@ Inside a group, activities stay newest-first. The same filters work in both view
 
 | Filter | Query | Effect |
 | --- | --- | --- |
+| Search | `?q=astro` | Matches repository name, owner or a cached contributor login. Space-separated terms must all match. |
 | Owner | `?owner=acme` | Limits the feed and stats to one tracked owner. |
 | Activity type | `?kind=push`, `?kind=pull`, `?kind=issue` | Repeat the parameter to select several kinds; omit it for all. |
 | Issue label | `?label=bug` | Keeps only issue activities carrying any selected label. |
 | Show all | `?show=all` | Removes the default 100-activity cap. |
 
-Filters combine, for example `/?view=user&kind=issue&label=bug`. The
-filter section is always visible above the feed; each chip shows how many
-activities it matches and clears with a second click.
+Filters combine, for example `/?q=astro&view=user&kind=issue&label=bug`. The
+owners and filter sections start collapsed; the filter summary still shows the
+matching activity count. Each chip shows how many activities it matches and
+clears with a second click, and a search for a contributor also narrows the feed
+to that contributor's repositories.
 
 ## Quick start (Docker)
 
@@ -106,9 +110,9 @@ overriding real environment variables). `BACKEND_URL` defaults to
 
 ### GitHub rate limits
 
-A snapshot costs **4 requests** (repository, latest PR, tags, first issues page).
-Without a token GitHub allows 60 requests/hour, so the backend defaults to a
-30-minute cadence and warns at startup. That comfortably covers a handful of
+A snapshot costs **5 requests** (repository, latest PR, tags, first issues page,
+top contributors). Without a token GitHub allows 60 requests/hour, so the backend
+defaults to a 30-minute cadence and warns at startup. That comfortably covers a handful of
 public repositories. Add `GITHUB_TOKEN` for more repositories or a faster cadence.
 
 ## Bulk import
@@ -187,7 +191,7 @@ Errors use a consistent envelope:
 
 - Tracking validates the repository against GitHub and stores the first snapshot immediately.
 - A tracker goroutine syncs every tracked repository on the configured interval. Concurrent refreshes of the same repo are collapsed with `singleflight`.
-- Each snapshot stores repository metadata, the latest updated PR (any state), up to 10 tags and up to 25 open issues (pull requests filtered out). Open-item count comes from GitHub and includes PRs.
+- Each snapshot stores repository metadata, the latest updated PR (any state), up to 10 tags, up to 25 open issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
 - If a sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
 - MongoDB has a unique index on the normalized `owner/name`, so case variants cannot be tracked twice.
 
@@ -207,7 +211,7 @@ frontend/
   src/components/         activity feed, forms, panels, tags, issues, icons
   src/lib/                typed API client and formatting helpers
   src/middleware.ts       security headers (CSP, nosniff, frame denial)
-  public/                 favicon and confirmation script
+  public/                 favicon, confirmation and in-place feed scripts
 import                    interactive bulk importer (Node, no dependencies)
 docker-compose.yml
 ```
@@ -236,7 +240,7 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
 - **Private repositories are visible to everyone who can reach the dashboard.** The
   dashboard is public by design. A `GITHUB_TOKEN` is useful for rate limits, but only
   add private repositories when the whole deployment is in a trusted network.
-- Only the repository owner/org is shown; collaborators would require more API calls/permissions.
+- Only the repository owner/org and top contributors (up to 100, used for search) are stored; there is no full collaborator or permission model.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
 - The feed is built from cached snapshots: one push timestamp per repository, the latest pull request per repository, and up to 25 open issues per repository. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
 - Issue lists show up to 25 open issues per repository (fewer if the first 100 issue/PR

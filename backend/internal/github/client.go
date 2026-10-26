@@ -25,6 +25,9 @@ const (
 	maxBodySize = 2 << 20
 	maxTags     = 10
 	maxIssues   = 25
+	// maxContributors caps the contributor list stored per snapshot. GitHub
+	// returns them ordered by contribution count.
+	maxContributors = 100
 )
 
 var (
@@ -74,13 +77,14 @@ func NewClient(baseURL, token string) *Client {
 }
 
 // FetchSnapshot retrieves repository metadata, the latest updated pull
-// request, tags and open issues in parallel.
+// request, tags, open issues and top contributors in parallel.
 func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.Repository, error) {
 	var (
-		repo   *model.Repository
-		pr     *model.PullRequest
-		tags   []model.Tag
-		issues []model.Issue
+		repo         *model.Repository
+		pr           *model.PullRequest
+		tags         []model.Tag
+		issues       []model.Issue
+		contributors []model.User
 	)
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -100,6 +104,10 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		issues, err = c.fetchIssues(ctx, owner, name)
 		return err
 	})
+	group.Go(func() (err error) {
+		contributors, err = c.fetchContributors(ctx, owner, name)
+		return err
+	})
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}
@@ -107,6 +115,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 	repo.LatestPR = pr
 	repo.Tags = tags
 	repo.Issues = issues
+	repo.Contributors = contributors
 	repo.SyncError = ""
 	return repo, nil
 }
@@ -136,6 +145,7 @@ func (c *Client) fetchRepository(ctx context.Context, owner, name string) (*mode
 		PushedAt:      raw.PushedAt,
 		Tags:          []model.Tag{},
 		Issues:        []model.Issue{},
+		Contributors:  []model.User{},
 	}, nil
 }
 
@@ -213,6 +223,22 @@ func (c *Client) fetchIssues(ctx context.Context, owner, name string) ([]model.I
 	return issues, nil
 }
 
+func (c *Client) fetchContributors(ctx context.Context, owner, name string) ([]model.User, error) {
+	var raws []ghUser
+	path := fmt.Sprintf("%s/contributors?per_page=%d", repoPath(owner, name), maxContributors)
+	if err := c.get(ctx, path, &raws); err != nil {
+		return nil, err
+	}
+	contributors := make([]model.User, 0, len(raws))
+	for _, raw := range raws {
+		if raw.Login == "" {
+			continue // anonymized contributors cannot be searched by login
+		}
+		contributors = append(contributors, raw.toModel())
+	}
+	return contributors, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -232,6 +258,9 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if resp.StatusCode == http.StatusNoContent {
+			return nil
+		}
 		if err := json.NewDecoder(io.LimitReader(resp.Body, maxBodySize)).Decode(out); err != nil {
 			return fmt.Errorf("github: decode response: %w", err)
 		}

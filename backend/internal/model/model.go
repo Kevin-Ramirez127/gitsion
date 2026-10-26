@@ -81,6 +81,10 @@ type Repository struct {
 	Tags     []Tag        `bson:"tags" json:"tags"`
 	Issues   []Issue      `bson:"issues" json:"issues"`
 
+	// Contributors are the top contributors returned by GitHub, capped so the
+	// snapshot stays small. They power repository search.
+	Contributors []User `bson:"contributors" json:"contributors"`
+
 	TrackedAt       time.Time `bson:"tracked_at" json:"trackedAt"`
 	LastSyncedAt    time.Time `bson:"last_synced_at" json:"lastSyncedAt"`
 	LastSyncAttempt time.Time `bson:"last_sync_attempt" json:"lastSyncAttempt"`

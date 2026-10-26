@@ -14,6 +14,7 @@ import type { OwnerSummary, Repository } from '../lib/types';
 
 const searchParams = Astro.url.searchParams;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
+const query = (searchParams.get('q') ?? '').trim();
 const okMessage = searchParams.get('ok');
 const errorMessage = searchParams.get('error');
 const showAll = searchParams.get('show') === 'all';
@@ -43,11 +44,27 @@ try {
       : 'Could not reach the gitsion backend.';
 }
 
-const totalIssues = repos.reduce((total, repo) => total + repo.issues.length, 0);
-const openLatestPrs = repos.filter(
+const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
+const searchedRepos =
+  searchTerms.length === 0
+    ? repos
+    : repos.filter((repo) => {
+        const haystack = [
+          repo.name,
+          repo.fullName,
+          repo.owner.login,
+          ...(repo.contributors ?? []).map((contributor) => contributor.login),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return searchTerms.every((term) => haystack.includes(term));
+      });
+
+const totalIssues = searchedRepos.reduce((total, repo) => total + repo.issues.length, 0);
+const openLatestPrs = searchedRepos.filter(
   (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
 ).length;
-const lastSync = repos.reduce<string>((latest, repo) => {
+const lastSync = searchedRepos.reduce<string>((latest, repo) => {
   if (!repo.lastSyncedAt) return latest;
   if (!latest) return repo.lastSyncedAt;
   return new Date(repo.lastSyncedAt) > new Date(latest) ? repo.lastSyncedAt : latest;
@@ -57,10 +74,10 @@ const activeOwner =
   ownerFilter;
 const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
 
-const allActivities = buildActivityFeed(repos);
+const allActivities = buildActivityFeed(searchedRepos);
 
 const availableLabels = [
-  ...new Set(repos.flatMap((repo) => repo.issues.flatMap((issue) => issue.labels))),
+  ...new Set(searchedRepos.flatMap((repo) => repo.issues.flatMap((issue) => issue.labels))),
 ].sort((a, b) => a.localeCompare(b));
 const availableLabelSet = new Set(availableLabels);
 const selectedLabels = new Set(requestedLabels.filter((label) => availableLabelSet.has(label)));
@@ -97,6 +114,7 @@ const activitySummary = hasFilters
 
 interface FeedQuery {
   owner: string;
+  q: string;
   view: FeedView;
   kinds: ActivityKind[];
   labels: string[];
@@ -105,6 +123,7 @@ interface FeedQuery {
 
 function feedQuery(overrides: Partial<FeedQuery> = {}): string {
   const owner = overrides.owner ?? ownerFilter;
+  const q = overrides.q ?? query;
   const nextView = overrides.view ?? view;
   const kinds = overrides.kinds ?? [...selectedKinds];
   const labels = overrides.labels ?? [...selectedLabels];
@@ -112,13 +131,14 @@ function feedQuery(overrides: Partial<FeedQuery> = {}): string {
 
   const params = new URLSearchParams();
   if (owner) params.set('owner', owner);
+  if (q) params.set('q', q);
   if (nextView === 'user') params.set('view', 'user');
   for (const kind of kinds) params.append('kind', kind);
   for (const label of labels) params.append('label', label);
   if (all) params.set('show', 'all');
 
-  const query = params.toString();
-  return query ? `/?${query}` : '/';
+  const search = params.toString();
+  return search ? `/?${search}` : '/';
 }
 
 function kindHref(kind: ActivityKind | null): string {
@@ -178,6 +198,36 @@ function labelHref(label: string): string {
   )}
 
   <div id="dashboard">
+  <form class="search-form" method="GET" action="/" role="search" data-feed-search>
+    <label class="search-label" for="feed-search">Search</label>
+    <div class="search-row">
+      <input
+        class="input search-input"
+        id="feed-search"
+        type="search"
+        name="q"
+        value={query}
+        placeholder="Project, owner or contributor"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button class="btn btn-primary" type="submit">
+        <Icon name="search" size={14} /> Search
+      </button>
+      {query ? <a class="btn btn-ghost" href={feedQuery({ q: '' })}>Clear</a> : null}
+    </div>
+    <p class="search-hint">
+      {query
+        ? `${plainNumber(searchedRepos.length)} of ${plainNumber(repos.length)} projects match “${query}”.`
+        : 'Matches repository names, owners and cached contributors.'}
+    </p>
+    {ownerFilter && <input type="hidden" name="owner" value={ownerFilter} />}
+    {view === 'user' && <input type="hidden" name="view" value="user" />}
+    {[...selectedKinds].map((kind) => <input type="hidden" name="kind" value={kind} />)}
+    {[...selectedLabels].map((label) => <input type="hidden" name="label" value={label} />)}
+    {showAll && <input type="hidden" name="show" value="all" />}
+  </form>
+
   <section class="stats" aria-label="Dashboard summary">
     <StatCard
       label="Activities"
@@ -187,13 +237,15 @@ function labelHref(label: string): string {
     />
     <StatCard
       label="Repositories"
-      value={plainNumber(repos.length)}
+      value={plainNumber(searchedRepos.length)}
       hint={
-        ownerFilter
-          ? `filtered by ${activeOwner}`
-          : lastSync
-            ? `last sync ${relativeTime(lastSync)}`
-            : 'tracked repositories'
+        query
+          ? `matching “${query}”`
+          : ownerFilter
+            ? `filtered by ${activeOwner}`
+            : lastSync
+              ? `last sync ${relativeTime(lastSync)}`
+              : 'tracked repositories'
       }
       icon="repo"
     />
@@ -211,84 +263,111 @@ function labelHref(label: string): string {
     />
   </section>
 
-  <OwnerChips owners={owners} activeOwner={activeOwner} total={totalTracked} />
+  <div class="feed-controls">
+    {owners.length > 0 && (
+      <details class="filter-section" data-collapsible="owners">
+        <summary class="filter-summary">
+          <span class="filter-summary-title">
+            <Icon name="users" size={13} /> Owners
+          </span>
+          <span class="filter-summary-note">
+            {activeOwner
+              ? `Filtered: ${activeOwner}`
+              : `${plainNumber(owners.length)} owners · ${plainNumber(totalTracked)} projects`}
+          </span>
+          <span class="filter-toggle" aria-hidden="true"></span>
+        </summary>
+        <OwnerChips
+          owners={owners}
+          activeOwner={activeOwner}
+          total={totalTracked}
+          hrefFor={(login) => feedQuery({ owner: login ?? '' })}
+        />
+      </details>
+    )}
 
-  {repos.length > 0 && (
-    <section class="filters" aria-labelledby="filters-title">
-      <div class="filters-head">
-        <h2 class="filters-title" id="filters-title">Filter feed</h2>
-        {hasFilters ? (
-          <a class="filters-clear" href={feedQuery({ kinds: [], labels: [] })}>
-            Clear filters
-          </a>
-        ) : (
+    {repos.length > 0 && (
+      <details class="filters" data-collapsible="filters">
+        <summary class="filters-head">
+          <span class="filters-title" id="filters-title">Filter feed</span>
           <span class="filters-status">{activitySummary}</span>
-        )}
-      </div>
+          <span class="filter-toggle" aria-hidden="true"></span>
+        </summary>
 
-      <div class="filter-row">
-        <span class="filter-label">View</span>
-        <a
-          class:list={['filter-chip', { 'is-active': view === 'project' }]}
-          href={feedQuery({ view: 'project' })}
-        >
-          By project
-        </a>
-        <a
-          class:list={['filter-chip', { 'is-active': view === 'user' }]}
-          href={feedQuery({ view: 'user' })}
-        >
-          By person
-        </a>
-      </div>
-
-      <div class="filter-row">
-        <span class="filter-label">Activity</span>
-        <a
-          class:list={['filter-chip', { 'is-active': selectedKinds.size === 0 }]}
-          href={kindHref(null)}
-        >
-          All <span class="filter-count">{plainNumber(allActivities.length)}</span>
-        </a>
-        <a
-          class:list={['filter-chip', { 'is-active': selectedKinds.has('push') }]}
-          href={kindHref('push')}
-        >
-          Pushes <span class="filter-count">{plainNumber(kindCounts.push)}</span>
-        </a>
-        <a
-          class:list={['filter-chip', { 'is-active': selectedKinds.has('pull') }]}
-          href={kindHref('pull')}
-        >
-          Pull requests <span class="filter-count">{plainNumber(kindCounts.pull)}</span>
-        </a>
-        <a
-          class:list={['filter-chip', { 'is-active': selectedKinds.has('issue') }]}
-          href={kindHref('issue')}
-        >
-          Issues <span class="filter-count">{plainNumber(kindCounts.issue)}</span>
-        </a>
-      </div>
-
-      {availableLabels.length > 0 && (
-        <div class="filter-row">
-          <span class="filter-label">Issue labels</span>
-          {availableLabels.map((label) => (
+        <div class="filters-body">
+          <div class="filter-row">
+            <span class="filter-label">View</span>
             <a
-              class:list={['filter-chip', { 'is-active': selectedLabels.has(label) }]}
-              href={labelHref(label)}
+              class:list={['filter-chip', { 'is-active': view === 'project' }]}
+              href={feedQuery({ view: 'project' })}
             >
-              {label} <span class="filter-count">{plainNumber(labelCounts.get(label) ?? 0)}</span>
+              By project
             </a>
-          ))}
+            <a
+              class:list={['filter-chip', { 'is-active': view === 'user' }]}
+              href={feedQuery({ view: 'user' })}
+            >
+              By person
+            </a>
+          </div>
+
+          <div class="filter-row">
+            <span class="filter-label">Activity</span>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.size === 0 }]}
+              href={kindHref(null)}
+            >
+              All <span class="filter-count">{plainNumber(allActivities.length)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('push') }]}
+              href={kindHref('push')}
+            >
+              Pushes <span class="filter-count">{plainNumber(kindCounts.push)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('pull') }]}
+              href={kindHref('pull')}
+            >
+              Pull requests <span class="filter-count">{plainNumber(kindCounts.pull)}</span>
+            </a>
+            <a
+              class:list={['filter-chip', { 'is-active': selectedKinds.has('issue') }]}
+              href={kindHref('issue')}
+            >
+              Issues <span class="filter-count">{plainNumber(kindCounts.issue)}</span>
+            </a>
+          </div>
+
+          {availableLabels.length > 0 && (
+            <div class="filter-row">
+              <span class="filter-label">Issue labels</span>
+              {availableLabels.map((label) => (
+                <a
+                  class:list={['filter-chip', { 'is-active': selectedLabels.has(label) }]}
+                  href={labelHref(label)}
+                >
+                  {label} <span class="filter-count">{plainNumber(labelCounts.get(label) ?? 0)}</span>
+                </a>
+              ))}
+            </div>
+          )}
+
+          {hasFilters && (
+            <div class="filters-actions">
+              <a class="filters-clear" href={feedQuery({ kinds: [], labels: [] })}>
+                Clear filters
+              </a>
+            </div>
+          )}
         </div>
-      )}
-    </section>
-  )}
+      </details>
+    )}
+  </div>
 
   <div class="section-head">
     <h2 class="section-title" data-feed-heading tabindex="-1">
-      {activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
+      {query ? `Matching “${query}”` : activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
     </h2>
     <span class="section-note" data-feed-summary>
       {activitySummary}
@@ -306,6 +385,14 @@ function labelHref(label: string): string {
       icon="filter"
     >
       <a class="btn" href={feedQuery({ kinds: [], labels: [] })}>Clear filters</a>
+    </EmptyState>
+  ) : query && repos.length > 0 ? (
+    <EmptyState
+      title={`No projects match “${query}”`}
+      text="Search covers project names, owners and cached contributors. Try a shorter term or clear the search."
+      icon="search"
+    >
+      <a class="btn" href={feedQuery({ q: '' })}>Clear search</a>
     </EmptyState>
   ) : repos.length > 0 ? (
     <EmptyState

@@ -3,7 +3,7 @@
 
 (() => {
   const dashboardSelector = '#dashboard';
-  const navSelector = '.filters, .owner-filter, .feed-more, .empty-state';
+  const navSelector = '.filters, .owner-filter, .feed-more, .empty-state, .search-form';
   const announcer = document.getElementById('feed-announcer');
 
   let controller = null;
@@ -28,6 +28,22 @@
     announcer.textContent = summary ? summary.textContent.replace(/\s+/g, ' ').trim() : '';
   }
 
+  function collapsibleState() {
+    const state = new Map();
+    document.querySelectorAll('details[data-collapsible]').forEach((element) => {
+      const key = element.getAttribute('data-collapsible');
+      if (key) state.set(key, element.open);
+    });
+    return state;
+  }
+
+  function restoreCollapsibleState(root, state) {
+    root.querySelectorAll('details[data-collapsible]').forEach((element) => {
+      const key = element.getAttribute('data-collapsible');
+      if (key && state.has(key)) element.open = state.get(key);
+    });
+  }
+
   async function load(url, { push }) {
     const current = dashboard();
     if (!current) {
@@ -37,6 +53,7 @@
 
     const id = ++requestId;
     const scrollY = window.scrollY;
+    const openSections = collapsibleState();
     if (controller) controller.abort();
     const requestController = new AbortController();
     controller = requestController;
@@ -58,6 +75,7 @@
       const next = parsed.querySelector(dashboardSelector);
       if (!next) throw new Error('Dashboard content missing');
 
+      restoreCollapsibleState(next, openSections);
       current.replaceWith(next);
       if (push) window.history.pushState({ feed: true }, '', url.href);
       window.scrollTo(0, scrollY);
@@ -91,6 +109,31 @@
 
     event.preventDefault();
     if (isBusy() || url.href === window.location.href) return;
+
+    load(url, { push: true });
+  });
+
+  document.addEventListener('submit', (event) => {
+    if (event.defaultPrevented) return;
+
+    const form = event.target instanceof Element ? event.target.closest('form[data-feed-search]') : null;
+    if (!form) return;
+
+    event.preventDefault();
+    if (isBusy()) return;
+
+    const action = form.getAttribute('action') || window.location.pathname;
+    const url = new URL(action, window.location.href);
+    const params = new URLSearchParams();
+
+    for (const [key, raw] of new FormData(form).entries()) {
+      if (typeof raw !== 'string') continue;
+      const value = key === 'q' ? raw.trim() : raw;
+      if (value) params.append(key, value);
+    }
+
+    url.search = params.toString();
+    if (url.href === window.location.href) return;
 
     load(url, { push: true });
   });

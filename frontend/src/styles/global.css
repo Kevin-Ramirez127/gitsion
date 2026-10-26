@@ -487,28 +487,142 @@ h3 {
   font-size: 11px;
 }
 
+/* --- search ------------------------------------------------------------- */
+
+.search-form {
+  margin-bottom: 28px;
+}
+
+.search-label {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--faint);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.search-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-input {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.search-hint {
+  margin: 7px 0 0;
+  color: var(--faint);
+  font-size: 11px;
+}
+
 /* --- owner filter ------------------------------------------------------- */
+
+.feed-controls {
+  margin-bottom: 36px;
+}
+
+.filter-section,
+.filters {
+  border-top: 2px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-section + .filters {
+  border-top: 0;
+}
+
+.filter-summary,
+.filters-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 11px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.filter-summary::-webkit-details-marker,
+.filters-head::-webkit-details-marker {
+  display: none;
+}
+
+.filter-summary:hover .filter-summary-title,
+.filters-head:hover .filters-title {
+  color: var(--accent);
+}
+
+.filter-summary-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.filter-summary-note {
+  justify-self: end;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-toggle {
+  position: relative;
+  justify-self: end;
+  width: 14px;
+  height: 14px;
+  color: var(--text);
+}
+
+.filter-toggle::before,
+.filter-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 14px;
+  height: 1.5px;
+  background: currentColor;
+}
+
+.filter-toggle::before {
+  transform: translateY(-50%);
+}
+
+.filter-toggle::after {
+  transform: translateY(-50%) rotate(90deg);
+  transition: transform 0.15s ease;
+}
+
+details[open] > summary .filter-toggle::after {
+  transform: translateY(-50%) rotate(0deg);
+}
+
+.filter-section[open] > .filter-summary {
+  border-bottom: 1px solid var(--border);
+}
 
 .owner-filter {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 36px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
-}
-
-.owner-filter-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: 6px;
-  color: var(--text);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  margin: 0;
+  padding: 14px 0 18px;
 }
 
 .chip {
@@ -563,18 +677,11 @@ h3 {
 
 /* --- filters ------------------------------------------------------------ */
 
-.filters {
-  margin-bottom: 36px;
-  border-top: 2px solid var(--border);
-  border-bottom: 1px solid var(--border);
+.filters-head {
+  padding: 12px 0 9px;
 }
 
-.filters-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 12px 0 9px;
+.filters[open] > .filters-head {
   border-bottom: 1px solid var(--border);
 }
 
@@ -583,6 +690,7 @@ h3 {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+  transition: color 0.15s ease;
 }
 
 .filters-status,
@@ -594,6 +702,12 @@ h3 {
   text-transform: uppercase;
 }
 
+.filters-status {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .filters-clear {
   color: var(--accent);
   font-weight: 700;
@@ -601,6 +715,17 @@ h3 {
 
 .filters-clear:hover {
   color: var(--text);
+}
+
+.filters-body {
+  padding-bottom: 4px;
+}
+
+.filters-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 0;
+  border-top: 1px solid var(--rule-soft);
 }
 
 .filter-row {
@@ -612,7 +737,7 @@ h3 {
   border-bottom: 1px solid var(--rule-soft);
 }
 
-.filter-row:last-child {
+.filters-body > .filter-row:last-of-type {
   border-bottom: 0;
 }
 
@@ -1995,6 +2120,10 @@ a.pr-mini:hover {
 
   .form-row {
     flex-direction: column;
+  }
+
+  .search-input {
+    flex-basis: 100%;
   }
 
   .feed-avatar {

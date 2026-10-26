@@ -81,6 +81,16 @@ func TestFetchSnapshot(t *testing.T) {
 			}
 		]`))
 	})
+	mux.HandleFunc("/repos/acme/widget/contributors", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("per_page"); got != "100" {
+			t.Errorf("contributors per_page = %q, want 100", got)
+		}
+		_, _ = w.Write([]byte(`[
+			{"login": "octocat", "avatar_url": "https://avatars.example/octocat", "html_url": "https://github.com/octocat"},
+			{"login": "bob", "avatar_url": "https://avatars.example/bob", "html_url": "https://github.com/bob"},
+			{"login": "", "type": "Anonymous"}
+		]`))
+	})
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -121,6 +131,9 @@ func TestFetchSnapshot(t *testing.T) {
 	if repo.Issues[0].Number != 3 || len(repo.Issues[0].Labels) != 2 {
 		t.Errorf("issue = %+v", repo.Issues[0])
 	}
+	if len(repo.Contributors) != 2 || repo.Contributors[0].Login != "octocat" {
+		t.Errorf("contributors = %+v, want anonymous entry skipped", repo.Contributors)
+	}
 }
 
 func TestFetchSnapshotEmptyCollections(t *testing.T) {
@@ -131,6 +144,7 @@ func TestFetchSnapshotEmptyCollections(t *testing.T) {
 	mux.HandleFunc("/repos/acme/empty/pulls", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 	mux.HandleFunc("/repos/acme/empty/tags", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 	mux.HandleFunc("/repos/acme/empty/issues", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
+	mux.HandleFunc("/repos/acme/empty/contributors", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -142,7 +156,7 @@ func TestFetchSnapshotEmptyCollections(t *testing.T) {
 	if repo.LatestPR != nil {
 		t.Error("LatestPR should be nil")
 	}
-	if repo.Tags == nil || repo.Issues == nil || repo.Topics == nil {
+	if repo.Tags == nil || repo.Issues == nil || repo.Topics == nil || repo.Contributors == nil {
 		t.Error("collections should be empty slices, not nil")
 	}
 }
