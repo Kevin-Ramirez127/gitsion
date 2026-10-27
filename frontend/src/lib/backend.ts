@@ -34,7 +34,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(
       0,
       'network_error',
-      'Could not reach the gitsion API. Is the backend running?',
+      'Could not load the feed. Try again shortly.',
     );
   }
 
