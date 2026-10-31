@@ -10,17 +10,23 @@ const {
   title = 'gitsion · GitHub activity feed',
   description = 'A newest-first feed of pushes, pull requests and issues across the GitHub repositories you track.',
 } = Astro.props;
+
+const isAdmin = Astro.locals.isAdmin;
+const writesEnabled = Astro.locals.writesEnabled;
+const isHome = Astro.url.pathname === '/';
+const theme = Astro.cookies.get('gitsion_theme')?.value === 'light' ? 'light' : 'dark';
+const nextTheme = theme === 'dark' ? 'light' : 'dark';
+const themeColor = theme === 'dark' ? '#0b0b0b' : '#f2f0ea';
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme={theme}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <meta name="color-scheme" content="light" />
-    <meta name="theme-color" content="#f2f0ea" />
-    <meta name="generator" content={Astro.generator} />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content={themeColor} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
   </head>
@@ -42,15 +48,25 @@ const {
         </a>
         <div class="header-actions">
           <span class="header-note">GitHub activity feed</span>
-          <form method="POST" action="/api/sync">
-            <button class="btn btn-ghost btn-sm" type="submit" title="Refresh every tracked repository">
-              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                <path d="M21 3v6h-6"></path>
-              </svg>
-              Sync all
-            </button>
-          </form>
+          <button
+            class="theme-toggle"
+            type="button"
+            data-theme-toggle
+            aria-label={`Switch to ${nextTheme} mode`}
+            title={`Switch to ${nextTheme} mode`}
+          >
+            <span class="theme-toggle-label" data-theme-label>
+              {theme === 'dark' ? 'Dark' : 'Light'}
+            </span>
+            <span class="theme-toggle-track" aria-hidden="true">
+              <span class="theme-toggle-thumb"></span>
+            </span>
+          </button>
+          {!isHome && (
+            <a class="header-note" href="/admin">
+              {isAdmin ? 'Admin' : writesEnabled ? 'Admin sign in' : 'Read-only'}
+            </a>
+          )}
         </div>
       </div>
     </header>
@@ -61,11 +77,11 @@ const {
 
     <footer class="site-footer">
       <div class="container footer-inner">
-        <span>gitsion · GitHub data, cached in MongoDB</span>
-        <a href="https://docs.github.com/rest" target="_blank" rel="noreferrer noopener">GitHub REST API</a>
+        <span>gitsion · public repository activity</span>
       </div>
     </footer>
 
+    <script src="/theme.js" defer></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

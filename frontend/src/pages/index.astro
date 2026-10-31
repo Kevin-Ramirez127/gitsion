@@ -1,7 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import ActivityFeed from '../components/ActivityFeed.astro';
-import AddRepoForm from '../components/AddRepoForm.astro';
 import EmptyState from '../components/EmptyState.astro';
 import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
@@ -41,7 +40,7 @@ try {
   loadError =
     error instanceof ApiError
       ? error.message
-      : 'Could not reach the gitsion backend.';
+      : 'Could not load the feed. Try again shortly.';
 }
 
 const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
@@ -176,11 +175,16 @@ function labelHref(label: string): string {
       </h1>
       <p class="lede">
         Pushes, pull requests and issues from the repositories you track, gathered into one
-        calm feed. Data is pulled from the public GitHub API and cached in MongoDB.
+        calm, readable feed.
       </p>
     </div>
     <div class="hero-aside">
-      <AddRepoForm />
+      <div class="track-form">
+        <p class="form-label">Public feed</p>
+        <p class="form-hint">
+          A read-only overview of recent activity, kept up to date automatically.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -219,7 +223,7 @@ function labelHref(label: string): string {
     <p class="search-hint">
       {query
         ? `${plainNumber(searchedRepos.length)} of ${plainNumber(repos.length)} projects match “${query}”.`
-        : 'Matches repository names, owners and cached contributors.'}
+        : 'Matches repository names, owners and known contributors.'}
     </p>
     {ownerFilter && <input type="hidden" name="owner" value={ownerFilter} />}
     {view === 'user' && <input type="hidden" name="view" value="user" />}
@@ -244,7 +248,7 @@ function labelHref(label: string): string {
           : ownerFilter
             ? `filtered by ${activeOwner}`
             : lastSync
-              ? `last sync ${relativeTime(lastSync)}`
+              ? `updated ${relativeTime(lastSync)}`
               : 'tracked repositories'
       }
       icon="repo"
@@ -252,13 +256,13 @@ function labelHref(label: string): string {
     <StatCard
       label="Open issues"
       value={plainNumber(totalIssues)}
-      hint="up to 25 per repository"
+      hint="across tracked repositories"
       icon="issue"
     />
     <StatCard
       label="Repos with open PR"
       value={plainNumber(openLatestPrs)}
-      hint="latest PR per repository"
+      hint="with an active pull request"
       icon="pull"
     />
   </section>
@@ -389,7 +393,7 @@ function labelHref(label: string): string {
   ) : query && repos.length > 0 ? (
     <EmptyState
       title={`No projects match “${query}”`}
-      text="Search covers project names, owners and cached contributors. Try a shorter term or clear the search."
+      text="Search covers project names, owners and known contributors. Try a shorter term or clear the search."
       icon="search"
     >
       <a class="btn" href={feedQuery({ q: '' })}>Clear search</a>
@@ -397,15 +401,9 @@ function labelHref(label: string): string {
   ) : repos.length > 0 ? (
     <EmptyState
       title="No activity captured yet"
-      text="The latest snapshots have no pushes, pull requests or issues to show. Sync the repositories to refresh them."
+      text="No pushes, pull requests or issues have been recorded yet. The feed updates automatically."
       icon="clock"
-    >
-      <form method="POST" action="/api/sync">
-        <button class="btn btn-primary" type="submit">
-          <Icon name="refresh" size={15} /> Sync all
-        </button>
-      </form>
-    </EmptyState>
+    />
   ) : ownerFilter ? (
     <EmptyState
       title={`No repositories tracked for ${activeOwner}`}
@@ -417,16 +415,9 @@ function labelHref(label: string): string {
   ) : (
     <EmptyState
       title="Nothing tracked yet"
-      text="Add a public GitHub repository above. gitsion will fetch its latest activity, pull request, tags and open issues, then keep the snapshot fresh in the background."
+      text="No repositories are tracked on this instance yet."
       icon="repo"
-    >
-      <form method="POST" action="/api/track">
-        <input type="hidden" name="repository" value="withastro/astro" />
-        <button class="btn btn-primary" type="submit">
-          <Icon name="plus" size={15} /> Track withastro/astro
-        </button>
-      </form>
-    </EmptyState>
+    />
   )}
 
   {activities.length > FEED_PAGE_SIZE && (

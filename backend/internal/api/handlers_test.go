@@ -45,6 +45,76 @@ func TestDashboardIsPublic(t *testing.T) {
 	}
 }
 
+func TestMutationsRequireAdminToken(t *testing.T) {
+	routes := []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{http.MethodPost, "/api/v1/repos", `{"repository":"acme/widget"}`},
+		{http.MethodDelete, "/api/v1/repos/acme/widget", ""},
+		{http.MethodPost, "/api/v1/repos/acme/widget/refresh", ""},
+		{http.MethodPost, "/api/v1/sync", ""},
+	}
+	for _, route := range routes {
+		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			handler := newTestRouter(&fakeTracker{})
+			rec := doWithToken(t, handler, route.method, route.path, route.body, "")
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401 (body %s)", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("WWW-Authenticate"); got == "" {
+				t.Error("WWW-Authenticate header is missing")
+			}
+			var body errorEnvelope
+			decode(t, rec, &body)
+			if body.Error.Code != "unauthorized" {
+				t.Errorf("code = %q, want unauthorized", body.Error.Code)
+			}
+		})
+	}
+}
+
+func TestMutationsRejectWrongAdminToken(t *testing.T) {
+	handler := newTestRouter(&fakeTracker{})
+	rec := doWithToken(t, handler, http.MethodPost, "/api/v1/repos", `{"repository":"acme/widget"}`, "wrong-token")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestReadOnlyModeDisablesMutations(t *testing.T) {
+	handler := newTestRouterWithToken(&fakeTracker{}, "")
+	rec := doWithToken(t, handler, http.MethodPost, "/api/v1/repos", `{"repository":"acme/widget"}`, "")
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	var body errorEnvelope
+	decode(t, rec, &body)
+	if body.Error.Code != "writes_disabled" {
+		t.Errorf("code = %q, want writes_disabled", body.Error.Code)
+	}
+
+	rec = doWithToken(t, handler, http.MethodGet, "/api/v1/repos", "", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("public read status = %d, want 200", rec.Code)
+	}
+}
+
+func TestAdminSessionProbe(t *testing.T) {
+	handler := newTestRouter(&fakeTracker{})
+
+	rec := doWithToken(t, handler, http.MethodGet, "/api/v1/admin/session", "", testAdminToken)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("valid token status = %d, want 204", rec.Code)
+	}
+
+	rec = doWithToken(t, handler, http.MethodGet, "/api/v1/admin/session", "", "")
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous status = %d, want 401", rec.Code)
+	}
+}
+
 func TestListRepos(t *testing.T) {
 	handler := newTestRouter(&fakeTracker{
 		listFn: func(_ context.Context, owner string) ([]model.Repository, error) {
@@ -93,6 +163,7 @@ func TestTrackRepo(t *testing.T) {
 		{name: "invalid ref", body: `{"repository":"nope"}`, trackErr: service.ErrInvalidRef, wantStatus: http.StatusUnprocessableEntity, wantCode: "invalid_repository"},
 		{name: "duplicate", body: `{"repository":"acme/widget"}`, trackErr: service.ErrAlreadyTracked, wantStatus: http.StatusConflict, wantCode: "already_tracked"},
 		{name: "github missing", body: `{"repository":"acme/missing"}`, trackErr: service.ErrRepoNotFound, wantStatus: http.StatusNotFound, wantCode: "repository_not_found"},
+		{name: "private repo", body: `{"repository":"acme/secret"}`, trackErr: service.ErrPrivateRepo, wantStatus: http.StatusUnprocessableEntity, wantCode: "private_repository"},
 		{name: "github unauthorized", body: `{"repository":"acme/private"}`, trackErr: github.ErrUnauthorized, wantStatus: http.StatusBadGateway, wantCode: "github_auth_failed"},
 	}
 
@@ -194,6 +265,12 @@ func TestRefreshErrorMapping(t *testing.T) {
 			wantStatus: http.StatusNotFound,
 			wantCode:   "repository_not_found",
 		},
+		{
+			name:       "private repository",
+			err:        service.ErrPrivateRepo,
+			wantStatus: http.StatusUnprocessableEntity,
+			wantCode:   "private_repository",
+		},
 	}
 
 	for _, tt := range tests {
@@ -275,12 +352,23 @@ func TestUnknownRoute(t *testing.T) {
 
 // --- helpers ----------------------------------------------------------------
 
+const testAdminToken = "test-admin-token"
+
 func newTestRouter(tracker Tracker) http.Handler {
+	return newTestRouterWithToken(tracker, testAdminToken)
+}
+
+func newTestRouterWithToken(tracker Tracker, token string) http.Handler {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewRouter(tracker, logger)
+	return NewRouter(tracker, logger, token)
 }
 
 func do(t *testing.T, handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	return doWithToken(t, handler, method, path, body, testAdminToken)
+}
+
+func doWithToken(t *testing.T, handler http.Handler, method, path, body, token string) *httptest.ResponseRecorder {
 	t.Helper()
 	var reader io.Reader
 	if body != "" {
@@ -288,6 +376,9 @@ func do(t *testing.T, handler http.Handler, method, path, body string) *httptest
 	}
 	req := httptest.NewRequest(method, path, reader)
 	req.RemoteAddr = "127.0.0.1:1234"
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 	return rec

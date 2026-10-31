@@ -10,8 +10,9 @@ import (
 
 // server holds dependencies shared by handlers.
 type server struct {
-	tracker Tracker
-	log     *slog.Logger
+	tracker    Tracker
+	log        *slog.Logger
+	adminToken string
 }
 
 func withSecurityHeaders(next http.Handler) http.Handler {

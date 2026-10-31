@@ -17,6 +17,7 @@ type Config struct {
 	MongoDB      string
 	GitHubToken  string
 	GitHubAPIURL string
+	AdminToken   string
 	SyncInterval time.Duration
 	Concurrency  int
 	LogLevel     string
@@ -35,6 +36,7 @@ func Load() (Config, error) {
 		MongoDB:      envOr("MONGODB_DB", "gitsion"),
 		GitHubToken:  strings.TrimSpace(os.Getenv("GITHUB_TOKEN")),
 		GitHubAPIURL: strings.TrimRight(envOr("GITHUB_API_URL", "https://api.github.com"), "/"),
+		AdminToken:   strings.TrimSpace(os.Getenv("ADMIN_TOKEN")),
 		LogLevel:     strings.ToLower(envOr("LOG_LEVEL", "info")),
 	}
 

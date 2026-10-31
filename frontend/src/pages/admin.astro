@@ -1,0 +1,95 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AddRepoForm from '../components/AddRepoForm.astro';
+import Flash from '../components/Flash.astro';
+import Icon from '../components/Icon.astro';
+
+const isAdmin = Astro.locals.isAdmin;
+const enabled = Astro.locals.writesEnabled;
+const okMessage = Astro.url.searchParams.get('ok');
+const errorMessage = Astro.url.searchParams.get('error');
+
+Astro.response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+---
+
+<Layout
+  title="Admin · gitsion"
+  description="Sign in to manage the repositories tracked by this gitsion dashboard."
+>
+  <nav class="breadcrumb" aria-label="Breadcrumb">
+    <a href="/">Dashboard</a>
+    <span class="breadcrumb-sep">/</span>
+    <span>Admin</span>
+  </nav>
+
+  {okMessage && <Flash kind="success" message={okMessage} />}
+  {errorMessage && <Flash kind="error" message={errorMessage} />}
+
+  <section class="admin-panel">
+    <p class="eyebrow">
+      <Icon name="lock" size={13} /> Administrator
+    </p>
+    <h1>Manage tracked repositories</h1>
+
+    {!enabled ? (
+      <div class="banner" role="status">
+        <Icon name="alert" size={18} />
+        <div>
+          <strong>Read-only dashboard</strong>
+          <p>
+            Viewing is public. Set <code>ADMIN_TOKEN</code> on the frontend and backend to
+            enable adding, removing, refreshing and syncing repositories.
+          </p>
+        </div>
+      </div>
+    ) : isAdmin ? (
+      <>
+        <p class="lede">
+          You are signed in as administrator. Add a public repository below, or open the
+          read-only dashboard to browse the tracked repositories.
+        </p>
+        <div class="admin-manage">
+          <AddRepoForm />
+        </div>
+        <div class="admin-actions">
+          <form method="POST" action="/api/sync">
+            <button class="btn" type="submit">
+              <Icon name="refresh" size={14} /> Sync all
+            </button>
+          </form>
+          <a class="btn" href="/">Back to dashboard</a>
+          <form method="POST" action="/api/admin/logout">
+            <button class="btn btn-ghost" type="submit">Sign out</button>
+          </form>
+        </div>
+      </>
+    ) : (
+      <>
+        <p class="lede">
+          The activity feed is public and needs no login. Adding and removing repositories,
+          refreshing snapshots and starting a full sync require the admin token.
+        </p>
+        <form class="track-form" method="POST" action="/api/admin/login">
+          <label class="form-label" for="token">Admin token</label>
+          <div class="form-row">
+            <input
+              class="input"
+              id="token"
+              name="token"
+              type="password"
+              required
+              autocomplete="off"
+              spellcheck="false"
+              aria-describedby="token-hint"
+            />
+            <button class="btn btn-primary" type="submit">Sign in</button>
+          </div>
+          <p class="form-hint" id="token-hint">
+            Use the server's <code>ADMIN_TOKEN</code>. Sessions last 12 hours and are stored
+            in an HttpOnly, SameSite=Strict cookie.
+          </p>
+        </form>
+      </>
+    )}
+  </section>
+</Layout>

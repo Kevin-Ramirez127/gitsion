@@ -30,6 +30,9 @@ var (
 	ErrNotTracked = errors.New("repository is not tracked")
 	// ErrRepoNotFound means GitHub could not see the repository.
 	ErrRepoNotFound = errors.New("repository not found on GitHub")
+	// ErrPrivateRepo is returned when a repository is not public. The dashboard
+	// is public, so only public repository data may be stored.
+	ErrPrivateRepo = errors.New("only public repositories can be tracked")
 )
 
 const (
@@ -140,7 +143,14 @@ func (t *Tracker) List(ctx context.Context, owner string) ([]model.Repository, e
 	for i := range repos {
 		normalize(&repos[i])
 	}
-	return repos, nil
+	public := make([]model.Repository, 0, len(repos))
+	for _, repo := range repos {
+		if !isPublicRepository(repo) {
+			continue
+		}
+		public = append(public, repo)
+	}
+	return public, nil
 }
 
 // Get returns a single tracked repository.
@@ -151,6 +161,9 @@ func (t *Tracker) Get(ctx context.Context, owner, name string) (*model.Repositor
 	}
 	if err != nil {
 		return nil, err
+	}
+	if !isPublicRepository(*repo) {
+		return nil, ErrNotTracked
 	}
 	normalize(repo)
 	return repo, nil
@@ -164,6 +177,9 @@ func (t *Tracker) Owners(ctx context.Context) ([]model.OwnerSummary, error) {
 	}
 	byLogin := make(map[string]model.OwnerSummary)
 	for _, repo := range repos {
+		if !isPublicRepository(repo) {
+			continue
+		}
 		loginKey := repo.Owner.LoginKey
 		if loginKey == "" {
 			loginKey = strings.ToLower(repo.Owner.Login)
@@ -200,6 +216,9 @@ func (t *Tracker) Track(ctx context.Context, input string) (*model.Repository, e
 	snapshot, err := t.github.FetchSnapshot(ctx, owner, name)
 	if err != nil {
 		return nil, mapGitHubError(err)
+	}
+	if !isPublicRepository(*snapshot) {
+		return nil, ErrPrivateRepo
 	}
 
 	now := time.Now().UTC()
@@ -300,6 +319,10 @@ func (t *Tracker) SyncAll(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			break
 		}
+		if !isPublicRepository(repo) {
+			t.log.Debug("skipping non-public repository", "repo", repo.FullName)
+			continue
+		}
 		repo := repo
 		wg.Add(1)
 		go func() {
@@ -337,6 +360,9 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string) (*model.Repo
 		}
 
 		snapshot, fetchErr := t.github.FetchSnapshot(ctx, owner, name)
+		if fetchErr == nil && !isPublicRepository(*snapshot) {
+			fetchErr = ErrPrivateRepo
+		}
 		if fetchErr != nil {
 			// Keep the last good snapshot, but surface the failure in the UI.
 			existing.LastSyncAttempt = time.Now().UTC()
@@ -432,6 +458,13 @@ func mapGitHubError(err error) error {
 
 func repoKey(owner, name string) string {
 	return strings.ToLower(strings.TrimSpace(owner) + "/" + strings.TrimSpace(name))
+}
+
+// isPublicRepository treats missing or unknown visibility as non-public. The
+// dashboard exposes repository metadata to everyone, so only data GitHub
+// explicitly marks as public may be stored or shown.
+func isPublicRepository(repo model.Repository) bool {
+	return strings.EqualFold(strings.TrimSpace(repo.Visibility), "public")
 }
 
 func truncate(s string, max int) string {

@@ -15,6 +15,7 @@ interface Props {
 }
 
 const { repo } = Astro.props;
+const isAdmin = Astro.locals.isAdmin;
 const pr = repo.latestPr;
 const tag = repo.tags[0];
 const state = pr?.draft ? 'draft' : (pr?.state ?? 'closed');
@@ -118,17 +119,19 @@ const detailsHref = repositoryPath(repo.owner.login, repo.name);
       </span>
     </div>
     <div class="repo-foot-group">
-      <form
-        method="POST"
-        action="/api/untrack"
-        data-confirm={`Stop tracking ${repo.fullName}?`}
-      >
-        <input type="hidden" name="owner" value={repo.owner.login} />
-        <input type="hidden" name="name" value={repo.name} />
-        <button class="btn btn-ghost btn-sm" type="submit" aria-label={`Stop tracking ${repo.fullName}`} title="Stop tracking">
-          <Icon name="trash" size={13} />
-        </button>
-      </form>
+      {isAdmin && (
+        <form
+          method="POST"
+          action="/api/untrack"
+          data-confirm={`Stop tracking ${repo.fullName}?`}
+        >
+          <input type="hidden" name="owner" value={repo.owner.login} />
+          <input type="hidden" name="name" value={repo.name} />
+          <button class="btn btn-ghost btn-sm" type="submit" aria-label={`Stop tracking ${repo.fullName}`} title="Stop tracking">
+            <Icon name="trash" size={13} />
+          </button>
+        </form>
+      )}
       <a class="btn btn-sm" href={detailsHref}>Details</a>
     </div>
   </div>
