@@ -1,0 +1,82 @@
+---
+import Icon from './Icon.astro';
+import type { IssueEntry } from '../lib/collections';
+import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
+
+interface Props {
+  entries: IssueEntry[];
+  emptyText?: string;
+}
+
+const {
+  entries,
+  emptyText = 'No issues match this view.',
+} = Astro.props;
+---
+
+{entries.length > 0 ? (
+  <div class="issue-card-grid">
+    {entries.map(({ issue, repo }) => {
+      const closed = issue.state === 'closed';
+      return (
+        <article class:list={['issue-card', { 'is-closed': closed }]}>
+          <div class="issue-card-top">
+            <span class:list={['badge', closed ? 'badge-closed' : 'badge-open']}>
+              {closed ? 'Closed' : 'Open'}
+            </span>
+            <span class="issue-number">#{issue.number}</span>
+          </div>
+
+          <a
+            class="issue-card-title"
+            href={issue.htmlUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+          >
+            {issue.title}
+          </a>
+
+          <div class="issue-card-meta">
+            <a class="issue-repo" href={repositoryPath(repo.owner.login, repo.name)}>
+              {repo.fullName}
+            </a>
+            <span title={absoluteTime(issue.createdAt)}>
+              opened {relativeTime(issue.createdAt)} by {issue.author.login}
+            </span>
+            {closed && issue.closedAt && (
+              <span title={absoluteTime(issue.closedAt)}>
+                closed {relativeTime(issue.closedAt)}
+              </span>
+            )}
+          </div>
+
+          {issue.labels.length > 0 && (
+            <div class="issue-labels">
+              {issue.labels.map((label) => (
+                <span class="label">{label}</span>
+              ))}
+            </div>
+          )}
+
+          <div class="issue-card-foot">
+            <span>{issue.comments} {issue.comments === 1 ? 'comment' : 'comments'}</span>
+            <span title={absoluteTime(issue.updatedAt)}>
+              updated {relativeTime(issue.updatedAt)}
+            </span>
+            <a
+              class="issue-card-link"
+              href={issue.htmlUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label={`Open issue #${issue.number} on GitHub`}
+            >
+              GitHub <Icon name="external" size={11} />
+            </a>
+          </div>
+        </article>
+      );
+    })}
+  </div>
+) : (
+  <p class="empty-inline">{emptyText}</p>
+)}

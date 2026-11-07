@@ -2089,6 +2089,94 @@ a.pr-mini:hover {
   margin-top: 7px;
 }
 
+.issue-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 18px;
+}
+
+.issue-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 100%;
+  padding: 18px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.issue-card:hover {
+  border-color: var(--accent);
+}
+
+.issue-card.is-closed {
+  background: var(--panel-2);
+}
+
+.issue-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.issue-card-title {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.issue-card-title:hover {
+  color: var(--accent);
+}
+
+.issue-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.issue-card .issue-labels {
+  margin-top: 0;
+}
+
+.issue-card-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  color: var(--faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.issue-card-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.issue-card-link:hover {
+  color: var(--accent);
+}
+
 .label {
   padding: 1px 6px;
   border: 1px solid var(--border);
@@ -2285,7 +2373,8 @@ a.pr-mini:hover {
     grid-template-columns: 1fr;
   }
 
-  .repo-grid {
+  .repo-grid,
+  .issue-card-grid {
     grid-template-columns: 1fr;
   }
 

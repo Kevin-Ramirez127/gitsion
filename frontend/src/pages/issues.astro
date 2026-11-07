@@ -2,7 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import EmptyState from '../components/EmptyState.astro';
 import Icon from '../components/Icon.astro';
-import IssueList from '../components/IssueList.astro';
+import IssueCards from '../components/IssueCards.astro';
 import { ApiError, listRepositories } from '../lib/backend';
 import {
   collectIssues,
@@ -198,9 +198,8 @@ function tagHref(tag: string): string {
             {openTruncated && ` · showing ${plainNumber(visibleOpen.length)}`}
           </span>
         </div>
-        <IssueList
+        <IssueCards
           entries={visibleOpen}
-          showRepo
           emptyText={
             hasFilters
               ? 'No open issues match these tags.'
@@ -233,9 +232,8 @@ function tagHref(tag: string): string {
             {closedTruncated && ` · showing ${plainNumber(visibleClosed.length)}`}
           </span>
         </div>
-        <IssueList
+        <IssueCards
           entries={visibleClosed}
-          showRepo
           emptyText={
             hasFilters
               ? 'No closed issues match these tags.'
