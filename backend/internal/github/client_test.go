@@ -37,6 +37,9 @@ func TestFetchSnapshot(t *testing.T) {
 		if r.URL.Query().Get("state") != "all" {
 			t.Errorf("pulls state query = %q", r.URL.Query().Get("state"))
 		}
+		if got := r.URL.Query().Get("per_page"); got != "100" {
+			t.Errorf("pulls per_page = %q, want 100", got)
+		}
 		_, _ = w.Write([]byte(`[{
 			"number": 12,
 			"title": "Add the thing",
@@ -61,25 +64,47 @@ func TestFetchSnapshot(t *testing.T) {
 		if got := r.URL.Query().Get("per_page"); got != "100" {
 			t.Errorf("issues per_page = %q, want 100", got)
 		}
-		_, _ = w.Write([]byte(`[
-			{
-				"number": 3,
-				"title": "Something broke",
-				"user": {"login": "bob", "avatar_url": "https://avatars.example/bob", "html_url": "https://github.com/bob"},
-				"html_url": "https://github.com/acme/widget/issues/3",
-				"comments": 4,
-				"created_at": "2026-01-05T00:00:00Z",
-				"updated_at": "2026-01-06T00:00:00Z",
-				"labels": [{"name": "bug"}, {"name": "priority"}]
-			},
-			{
-				"number": 4,
-				"title": "I am a pull request",
-				"pull_request": {"url": "https://api.github.com/repos/acme/widget/pulls/4"},
-				"user": {"login": "bob"},
-				"labels": []
-			}
-		]`))
+		switch r.URL.Query().Get("state") {
+		case "open":
+			_, _ = w.Write([]byte(`[
+				{
+					"number": 3,
+					"title": "Something broke",
+					"state": "open",
+					"user": {"login": "bob", "avatar_url": "https://avatars.example/bob", "html_url": "https://github.com/bob"},
+					"html_url": "https://github.com/acme/widget/issues/3",
+					"comments": 4,
+					"created_at": "2026-01-05T00:00:00Z",
+					"updated_at": "2026-01-06T00:00:00Z",
+					"labels": [{"name": "bug"}, {"name": "priority"}]
+				},
+				{
+					"number": 4,
+					"title": "I am a pull request",
+					"pull_request": {"url": "https://api.github.com/repos/acme/widget/pulls/4"},
+					"user": {"login": "bob"},
+					"labels": []
+				}
+			]`))
+		case "closed":
+			_, _ = w.Write([]byte(`[
+				{
+					"number": 2,
+					"title": "Fixed already",
+					"state": "closed",
+					"user": {"login": "alice", "avatar_url": "https://avatars.example/alice", "html_url": "https://github.com/alice"},
+					"html_url": "https://github.com/acme/widget/issues/2",
+					"comments": 1,
+					"created_at": "2026-01-01T00:00:00Z",
+					"updated_at": "2026-01-07T00:00:00Z",
+					"closed_at": "2026-01-07T00:00:00Z",
+					"labels": [{"name": "bug"}]
+				}
+			]`))
+		default:
+			t.Errorf("issues state query = %q", r.URL.Query().Get("state"))
+			_, _ = w.Write([]byte(`[]`))
+		}
 	})
 	mux.HandleFunc("/repos/acme/widget/contributors", func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Query().Get("per_page"); got != "100" {
@@ -122,14 +147,20 @@ func TestFetchSnapshot(t *testing.T) {
 	if repo.LatestPR.MergedAt == nil {
 		t.Error("MergedAt is nil")
 	}
+	if len(repo.PullRequests) != 1 || repo.PullRequests[0].Number != 12 {
+		t.Errorf("pull requests = %+v", repo.PullRequests)
+	}
 	if len(repo.Tags) != 2 || repo.Tags[0].Name != "v1.2.0" || repo.Tags[0].CommitSHA == "" {
 		t.Errorf("tags = %+v", repo.Tags)
 	}
-	if len(repo.Issues) != 1 {
-		t.Fatalf("issues = %+v, want PRs filtered out", repo.Issues)
+	if len(repo.Issues) != 2 {
+		t.Fatalf("issues = %+v, want open and closed issues with PRs filtered out", repo.Issues)
 	}
-	if repo.Issues[0].Number != 3 || len(repo.Issues[0].Labels) != 2 {
-		t.Errorf("issue = %+v", repo.Issues[0])
+	if repo.Issues[0].Number != 2 || repo.Issues[0].State != "closed" || repo.Issues[0].ClosedAt == nil {
+		t.Errorf("closed issue = %+v", repo.Issues[0])
+	}
+	if repo.Issues[1].Number != 3 || repo.Issues[1].State != "open" || len(repo.Issues[1].Labels) != 2 {
+		t.Errorf("open issue = %+v", repo.Issues[1])
 	}
 	if len(repo.Contributors) != 2 || repo.Contributors[0].Login != "octocat" {
 		t.Errorf("contributors = %+v, want anonymous entry skipped", repo.Contributors)
@@ -156,7 +187,8 @@ func TestFetchSnapshotEmptyCollections(t *testing.T) {
 	if repo.LatestPR != nil {
 		t.Error("LatestPR should be nil")
 	}
-	if repo.Tags == nil || repo.Issues == nil || repo.Topics == nil || repo.Contributors == nil {
+	if repo.Tags == nil || repo.Issues == nil || repo.PullRequests == nil ||
+		repo.Topics == nil || repo.Contributors == nil {
 		t.Error("collections should be empty slices, not nil")
 	}
 }

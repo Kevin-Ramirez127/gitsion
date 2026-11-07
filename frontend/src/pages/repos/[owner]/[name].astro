@@ -8,6 +8,7 @@ import Panel from '../../../components/Panel.astro';
 import PrPanel from '../../../components/PrPanel.astro';
 import TagList from '../../../components/TagList.astro';
 import { ApiError, getRepository } from '../../../lib/backend';
+import { isOpenIssue } from '../../../lib/collections';
 import { getSiteConfig } from '../../../lib/config';
 import {
   absoluteTime,
@@ -43,6 +44,8 @@ try {
     Astro.response.status = 502;
   }
 }
+
+const openIssues = repo ? repo.issues.filter(isOpenIssue) : [];
 ---
 
 <Layout
@@ -167,9 +170,12 @@ try {
 
           <Panel title="Open issues" icon="issue" flush>
             <span slot="action" class="section-note">
-              {repo.issues.length} {repo.issues.length === 1 ? 'issue' : 'issues'}
+              {openIssues.length} {openIssues.length === 1 ? 'issue' : 'issues'}
             </span>
-            <IssueList issues={repo.issues} />
+            <IssueList
+              entries={openIssues.map((issue) => ({ issue, repo }))}
+              emptyText="No open issues. The issue tracker is clear."
+            />
           </Panel>
         </div>
 

@@ -139,6 +139,7 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
     }
 
     for (const issue of repo.issues) {
+      if (issue.state === 'closed') continue;
       const item = issueActivity(repo, issue);
       if (item) activities.push(item);
     }

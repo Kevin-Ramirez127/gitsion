@@ -23,6 +23,7 @@ export interface PullRequest {
   createdAt: string;
   updatedAt: string;
   mergedAt?: string | null;
+  closedAt?: string | null;
 }
 
 export interface Tag {
@@ -33,12 +34,14 @@ export interface Tag {
 export interface Issue {
   number: number;
   title: string;
+  state: 'open' | 'closed' | string;
   author: User;
   labels: string[];
   comments: number;
   htmlUrl: string;
   createdAt: string;
   updatedAt: string;
+  closedAt?: string | null;
 }
 
 export interface Repository {
@@ -56,6 +59,7 @@ export interface Repository {
   openItems: number;
   pushedAt: string;
   latestPr: PullRequest | null;
+  pullRequests?: PullRequest[];
   tags: Tag[];
   issues: Issue[];
   contributors: User[];

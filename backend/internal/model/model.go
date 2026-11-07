@@ -23,7 +23,7 @@ type Owner struct {
 	HTMLURL   string `bson:"html_url" json:"htmlUrl"`
 }
 
-// PullRequest is the most recently updated pull request of a repository.
+// PullRequest is a cached pull request of a repository.
 type PullRequest struct {
 	Number    int        `bson:"number" json:"number"`
 	Title     string     `bson:"title" json:"title"`
@@ -36,6 +36,7 @@ type PullRequest struct {
 	CreatedAt time.Time  `bson:"created_at" json:"createdAt"`
 	UpdatedAt time.Time  `bson:"updated_at" json:"updatedAt"`
 	MergedAt  *time.Time `bson:"merged_at,omitempty" json:"mergedAt,omitempty"`
+	ClosedAt  *time.Time `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
 }
 
 // Tag is a git tag. GitHub's tags endpoint does not expose tag dates, so we
@@ -45,16 +46,18 @@ type Tag struct {
 	CommitSHA string `bson:"commit_sha" json:"commitSha"`
 }
 
-// Issue is an open GitHub issue (pull requests are filtered out).
+// Issue is a cached GitHub issue (pull requests are filtered out).
 type Issue struct {
-	Number    int       `bson:"number" json:"number"`
-	Title     string    `bson:"title" json:"title"`
-	Author    User      `bson:"author" json:"author"`
-	Labels    []string  `bson:"labels" json:"labels"`
-	Comments  int       `bson:"comments" json:"comments"`
-	HTMLURL   string    `bson:"html_url" json:"htmlUrl"`
-	CreatedAt time.Time `bson:"created_at" json:"createdAt"`
-	UpdatedAt time.Time `bson:"updated_at" json:"updatedAt"`
+	Number    int        `bson:"number" json:"number"`
+	Title     string     `bson:"title" json:"title"`
+	State     string     `bson:"state" json:"state"` // open or closed
+	Author    User       `bson:"author" json:"author"`
+	Labels    []string   `bson:"labels" json:"labels"`
+	Comments  int        `bson:"comments" json:"comments"`
+	HTMLURL   string     `bson:"html_url" json:"htmlUrl"`
+	CreatedAt time.Time  `bson:"created_at" json:"createdAt"`
+	UpdatedAt time.Time  `bson:"updated_at" json:"updatedAt"`
+	ClosedAt  *time.Time `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
 }
 
 // Repository is both the tracked-repository record and the cached GitHub
@@ -77,9 +80,10 @@ type Repository struct {
 	OpenItems     int           `bson:"open_items" json:"openItems"` // GitHub open issues + PRs
 	PushedAt      time.Time     `bson:"pushed_at" json:"pushedAt"`
 
-	LatestPR *PullRequest `bson:"latest_pr,omitempty" json:"latestPr"`
-	Tags     []Tag        `bson:"tags" json:"tags"`
-	Issues   []Issue      `bson:"issues" json:"issues"`
+	LatestPR     *PullRequest  `bson:"latest_pr,omitempty" json:"latestPr"`
+	PullRequests []PullRequest `bson:"pull_requests" json:"pullRequests"`
+	Tags         []Tag         `bson:"tags" json:"tags"`
+	Issues       []Issue       `bson:"issues" json:"issues"`
 
 	// Contributors are the top contributors returned by GitHub, capped so the
 	// snapshot stays small. They power repository search.

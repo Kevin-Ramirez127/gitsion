@@ -246,6 +246,28 @@ h3 {
   text-transform: uppercase;
 }
 
+.site-nav {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin-left: auto;
+  margin-right: 24px;
+}
+
+.site-nav-link {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 0.15s ease;
+}
+
+.site-nav-link:hover,
+.site-nav-link.is-active {
+  color: var(--accent);
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -586,9 +608,31 @@ h3 {
 }
 
 .stat-card {
+  display: block;
   padding: 18px 20px 20px 0;
   border-right: 1px solid var(--border);
   background: transparent;
+  color: inherit;
+}
+
+.stat-card.is-link {
+  transition:
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.stat-card.is-link:hover {
+  background: var(--panel-hover);
+  color: inherit;
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.stat-card.is-link:hover .stat-label {
+  color: var(--accent);
+}
+
+.stat-card.is-link:hover .stat-value {
+  color: var(--accent);
 }
 
 .stat-card:not(:first-child) {
@@ -950,6 +994,18 @@ details[open] > summary .filter-toggle::after {
   color: var(--faint);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.collection-section {
+  margin-top: 40px;
+}
+
+.collection-section:first-of-type {
+  margin-top: 0;
+}
+
+.issues-filters {
+  margin-bottom: 32px;
 }
 
 /* --- activity feed ------------------------------------------------------ */
@@ -1969,6 +2025,11 @@ a.pr-mini:hover {
   color: var(--on-strong);
 }
 
+.issue-icon.is-pull {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 .issue-body {
   flex: 1;
   min-width: 0;
@@ -2004,6 +2065,21 @@ a.pr-mini:hover {
   margin-top: 4px;
   color: var(--faint);
   font-size: 10.5px;
+}
+
+.issue-repo {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.issue-repo:hover {
+  color: var(--accent);
+}
+
+.issue-branches {
+  margin-top: 7px;
 }
 
 .issue-labels {
@@ -2182,6 +2258,16 @@ a.pr-mini:hover {
     display: none;
   }
 
+  .site-nav {
+    gap: 12px;
+    margin-right: 14px;
+  }
+
+  .site-nav-link {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+  }
+
   .hero h1 {
     font-size: clamp(38px, 11vw, 58px);
   }
@@ -2224,6 +2310,26 @@ a.pr-mini:hover {
 }
 
 @media (max-width: 560px) {
+  .header-inner {
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 10px 0;
+  }
+
+  .site-nav {
+    order: 3;
+    width: 100%;
+    margin: 0;
+    padding-top: 8px;
+    border-top: 1px solid var(--rule-soft);
+    gap: 16px;
+  }
+
+  .site-nav-link {
+    font-size: 10px;
+    letter-spacing: 0.1em;
+  }
+
   .section-head {
     flex-direction: column;
     align-items: flex-start;
