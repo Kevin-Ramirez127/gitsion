@@ -8,9 +8,11 @@ import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
 import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
+import { getHeroCopy } from '../lib/config';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
 
+const hero = getHeroCopy();
 const searchParams = Astro.url.searchParams;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
 const query = (searchParams.get('q') ?? '').trim();
@@ -170,13 +172,11 @@ function labelHref(label: string): string {
         <Icon name="commit" size={13} /> Activity feed
       </p>
       <h1>
-        Everything that moved,<br />
-        <em>newest first.</em>
+        {hero.lead}
+        {hero.lead && hero.accent && <br />}
+        {hero.accent && <em>{hero.accent}</em>}
       </h1>
-      <p class="lede">
-        Pushes, pull requests and issues from the repositories you track, gathered into one
-        calm, readable feed.
-      </p>
+      <p class="lede">{hero.description}</p>
     </div>
     <div class="hero-aside">
       <div class="track-form">

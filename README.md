@@ -125,6 +125,22 @@ overriding real environment variables). `BACKEND_URL` defaults to
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error`. |
 | `BACKEND_URL` | `http://localhost:8080` | Frontend → backend URL (server-side only). |
 | `FRONTEND_PORT` | `4321` | Host port published by Docker Compose. |
+| `SITE_NAME` | `gitsion` | Brand name in the header, footer and page titles. |
+| `SITE_TITLE` | `<SITE_NAME> · <SITE_TAGLINE>` | Default document title. |
+| `SITE_DESCRIPTION` | built-in description | Default meta description. |
+| `SITE_TAGLINE` | `GitHub activity feed` | Header tagline and default title suffix. |
+| `HERO_TITLE` | `Everything that moved,\|newest first.` | Visible dashboard headline. Text after `\|` renders on a second line in the accent color. |
+| `HERO_DESCRIPTION` | built-in intro | Visible dashboard intro paragraph. |
+| `THEME_<TOKEN>` | built-in palette | Override a color in both themes. |
+| `THEME_DARK_<TOKEN>` | built-in palette | Override a color in the dark theme. |
+| `THEME_LIGHT_<TOKEN>` | built-in palette | Override a color in the light theme. |
+
+Branding and palette overrides are read at runtime, so they can be changed by
+restarting the frontend container. `THEME_<TOKEN>` is one of `BG`, `PANEL`,
+`PANEL_2`, `PANEL_HOVER`, `BORDER`, `RULE_SOFT`, `TEXT`, `MUTED`, `FAINT`,
+`ACCENT`, `ACCENT_SOFT`, `ON_STRONG`, `ON_ACCENT` or `PLACEHOLDER`. For example,
+`THEME_ACCENT=#2563eb` recolors both themes, while `THEME_DARK_BG=#000000`
+changes only dark mode.
 
 ### GitHub rate limits
 
@@ -242,7 +258,7 @@ backend/
 frontend/
   src/pages/              feed, detail page, admin login, form-action proxies
   src/components/         activity feed, forms, panels, tags, issues, icons
-  src/lib/                typed API client, auth/session helper and formatting helpers
+  src/lib/                typed API client, runtime branding/theme config, auth/session helper and formatting helpers
   src/middleware.ts       admin-session guard + security headers (CSP, nosniff, frame denial)
   public/                 favicon, confirmation and in-place feed scripts
 import                    interactive bulk importer (Node, no dependencies)

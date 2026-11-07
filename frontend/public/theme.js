@@ -13,7 +13,8 @@
     root.style.colorScheme = next;
 
     if (meta) {
-      meta.setAttribute('content', next === 'dark' ? '#0b0b0b' : '#f2f0ea');
+      const background = getComputedStyle(root).getPropertyValue('--bg').trim();
+      if (background) meta.setAttribute('content', background);
     }
     if (label) {
       label.textContent = next === 'dark' ? 'Dark' : 'Light';

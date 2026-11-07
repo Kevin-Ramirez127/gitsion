@@ -3,7 +3,9 @@ import Layout from '../layouts/Layout.astro';
 import AddRepoForm from '../components/AddRepoForm.astro';
 import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
+import { getSiteConfig } from '../lib/config';
 
+const site = getSiteConfig();
 const isAdmin = Astro.locals.isAdmin;
 const enabled = Astro.locals.writesEnabled;
 const okMessage = Astro.url.searchParams.get('ok');
@@ -13,8 +15,8 @@ Astro.response.headers.set('X-Robots-Tag', 'noindex, nofollow');
 ---
 
 <Layout
-  title="Admin · gitsion"
-  description="Sign in to manage the repositories tracked by this gitsion dashboard."
+  title={`Admin · ${site.name}`}
+  description={`Sign in to manage the repositories tracked by this ${site.name} dashboard.`}
 >
   <nav class="breadcrumb" aria-label="Breadcrumb">
     <a href="/">Dashboard</a>

@@ -8,6 +8,7 @@ import Panel from '../../../components/Panel.astro';
 import PrPanel from '../../../components/PrPanel.astro';
 import TagList from '../../../components/TagList.astro';
 import { ApiError, getRepository } from '../../../lib/backend';
+import { getSiteConfig } from '../../../lib/config';
 import {
   absoluteTime,
   compactNumber,
@@ -17,6 +18,7 @@ import {
 } from '../../../lib/format';
 import type { Repository } from '../../../lib/types';
 
+const site = getSiteConfig();
 const ownerParam = Astro.params.owner ?? '';
 const nameParam = Astro.params.name ?? '';
 const isAdmin = Astro.locals.isAdmin;
@@ -44,8 +46,8 @@ try {
 ---
 
 <Layout
-  title={repo ? `${repo.fullName} · gitsion` : 'Repository unavailable · gitsion'}
-  description={repo?.description || 'Repository details on gitsion.'}
+  title={repo ? `${repo.fullName} · ${site.name}` : `Repository unavailable · ${site.name}`}
+  description={repo?.description || `Repository details on ${site.name}.`}
 >
   <nav class="breadcrumb" aria-label="Breadcrumb">
     <a href="/">Dashboard</a>

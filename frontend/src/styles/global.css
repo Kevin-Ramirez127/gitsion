@@ -5,20 +5,54 @@
 
 :root {
   color-scheme: dark;
-  --bg: #0b0b0b;
-  --panel: #141414;
-  --panel-2: #191919;
-  --panel-hover: #202020;
-  --border: #3a3832;
-  --rule-soft: #2a2823;
-  --text: #f2f0ea;
-  --muted: #b8b3a8;
-  --faint: #8d887d;
-  --accent: #ff4d5e;
-  --accent-soft: #2b0d12;
-  --on-strong: #111111;
-  --on-accent: #16070a;
-  --placeholder: #7c776d;
+
+  /* Default palette. Any --theme-dark-* or --theme-light-* variable can be
+     overridden from the environment; see src/lib/config.ts. */
+  --theme-dark-bg: #0b0b0b;
+  --theme-dark-panel: #141414;
+  --theme-dark-panel-2: #191919;
+  --theme-dark-panel-hover: #202020;
+  --theme-dark-border: #3a3832;
+  --theme-dark-rule-soft: #2a2823;
+  --theme-dark-text: #f2f0ea;
+  --theme-dark-muted: #b8b3a8;
+  --theme-dark-faint: #8d887d;
+  --theme-dark-accent: #ff4d5e;
+  --theme-dark-accent-soft: #2b0d12;
+  --theme-dark-on-strong: #111111;
+  --theme-dark-on-accent: #16070a;
+  --theme-dark-placeholder: #7c776d;
+
+  --theme-light-bg: #f2f0ea;
+  --theme-light-panel: #ffffff;
+  --theme-light-panel-2: #f2f0ea;
+  --theme-light-panel-hover: #eae6dd;
+  --theme-light-border: #111111;
+  --theme-light-rule-soft: #c9c4b9;
+  --theme-light-text: #111111;
+  --theme-light-muted: #4d4d4d;
+  --theme-light-faint: #666666;
+  --theme-light-accent: #d40018;
+  --theme-light-accent-soft: #f7dadd;
+  --theme-light-on-strong: #ffffff;
+  --theme-light-on-accent: #ffffff;
+  --theme-light-placeholder: #9a958a;
+
+  --bg: var(--theme-dark-bg);
+  --panel: var(--theme-dark-panel);
+  --panel-2: var(--theme-dark-panel-2);
+  --panel-hover: var(--theme-dark-panel-hover);
+  --border: var(--theme-dark-border);
+  --rule-soft: var(--theme-dark-rule-soft);
+  --text: var(--theme-dark-text);
+  --muted: var(--theme-dark-muted);
+  --faint: var(--theme-dark-faint);
+  --accent: var(--theme-dark-accent);
+  --accent-soft: var(--theme-dark-accent-soft);
+  --on-strong: var(--theme-dark-on-strong);
+  --on-accent: var(--theme-dark-on-accent);
+  --placeholder: var(--theme-dark-placeholder);
+
   --radius-sm: 0px;
   --font: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif;
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
@@ -26,20 +60,20 @@
 
 :root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f2f0ea;
-  --panel: #ffffff;
-  --panel-2: #f2f0ea;
-  --panel-hover: #eae6dd;
-  --border: #111111;
-  --rule-soft: #c9c4b9;
-  --text: #111111;
-  --muted: #4d4d4d;
-  --faint: #666666;
-  --accent: #d40018;
-  --accent-soft: #f7dadd;
-  --on-strong: #ffffff;
-  --on-accent: #ffffff;
-  --placeholder: #9a958a;
+  --bg: var(--theme-light-bg);
+  --panel: var(--theme-light-panel);
+  --panel-2: var(--theme-light-panel-2);
+  --panel-hover: var(--theme-light-panel-hover);
+  --border: var(--theme-light-border);
+  --rule-soft: var(--theme-light-rule-soft);
+  --text: var(--theme-light-text);
+  --muted: var(--theme-light-muted);
+  --faint: var(--theme-light-faint);
+  --accent: var(--theme-light-accent);
+  --accent-soft: var(--theme-light-accent-soft);
+  --on-strong: var(--theme-light-on-strong);
+  --on-accent: var(--theme-light-on-accent);
+  --placeholder: var(--theme-light-placeholder);
 }
 
 *,
