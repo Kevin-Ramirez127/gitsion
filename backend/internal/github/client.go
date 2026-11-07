@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -24,7 +25,11 @@ const (
 	userAgent   = "gitsion-dashboard/1.0"
 	maxBodySize = 2 << 20
 	maxTags     = 10
-	maxIssues   = 25
+	// maxIssuesPerState and maxPullRequests cap the lists stored per snapshot.
+	// GitHub returns up to 100 items per page, which is enough for the
+	// "show more" sections on the dedicated issue and pull request pages.
+	maxIssuesPerState = 100
+	maxPullRequests   = 100
 	// maxContributors caps the contributor list stored per snapshot. GitHub
 	// returns them ordered by contribution count.
 	maxContributors = 100
@@ -76,12 +81,12 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
-// FetchSnapshot retrieves repository metadata, the latest updated pull
-// request, tags, open issues and top contributors in parallel.
+// FetchSnapshot retrieves repository metadata, pull requests, tags, issues and
+// top contributors in parallel.
 func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.Repository, error) {
 	var (
 		repo         *model.Repository
-		pr           *model.PullRequest
+		prs          []model.PullRequest
 		tags         []model.Tag
 		issues       []model.Issue
 		contributors []model.User
@@ -93,7 +98,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		return err
 	})
 	group.Go(func() (err error) {
-		pr, err = c.fetchLatestPullRequest(ctx, owner, name)
+		prs, err = c.fetchPullRequests(ctx, owner, name)
 		return err
 	})
 	group.Go(func() (err error) {
@@ -112,7 +117,11 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		return nil, err
 	}
 
-	repo.LatestPR = pr
+	repo.PullRequests = prs
+	if len(prs) > 0 {
+		latest := prs[0]
+		repo.LatestPR = &latest
+	}
 	repo.Tags = tags
 	repo.Issues = issues
 	repo.Contributors = contributors
@@ -149,33 +158,38 @@ func (c *Client) fetchRepository(ctx context.Context, owner, name string) (*mode
 	}, nil
 }
 
-func (c *Client) fetchLatestPullRequest(ctx context.Context, owner, name string) (*model.PullRequest, error) {
+func (c *Client) fetchPullRequests(ctx context.Context, owner, name string) ([]model.PullRequest, error) {
 	var raws []ghPullRequest
-	path := repoPath(owner, name) + "/pulls?state=all&sort=updated&direction=desc&per_page=1"
+	path := fmt.Sprintf(
+		"%s/pulls?state=all&sort=updated&direction=desc&per_page=%d",
+		repoPath(owner, name),
+		maxPullRequests,
+	)
 	if err := c.get(ctx, path, &raws); err != nil {
 		return nil, err
 	}
-	if len(raws) == 0 {
-		return nil, nil
+	prs := make([]model.PullRequest, 0, len(raws))
+	for _, raw := range raws {
+		state := raw.State
+		if raw.MergedAt != nil {
+			state = "merged"
+		}
+		prs = append(prs, model.PullRequest{
+			Number:    raw.Number,
+			Title:     raw.Title,
+			State:     state,
+			Draft:     raw.Draft,
+			Author:    raw.User.toModel(),
+			HTMLURL:   raw.HTMLURL,
+			HeadRef:   raw.Head.Ref,
+			BaseRef:   raw.Base.Ref,
+			CreatedAt: raw.CreatedAt,
+			UpdatedAt: raw.UpdatedAt,
+			MergedAt:  raw.MergedAt,
+			ClosedAt:  raw.ClosedAt,
+		})
 	}
-	raw := raws[0]
-	state := raw.State
-	if raw.MergedAt != nil {
-		state = "merged"
-	}
-	return &model.PullRequest{
-		Number:    raw.Number,
-		Title:     raw.Title,
-		State:     state,
-		Draft:     raw.Draft,
-		Author:    raw.User.toModel(),
-		HTMLURL:   raw.HTMLURL,
-		HeadRef:   raw.Head.Ref,
-		BaseRef:   raw.Base.Ref,
-		CreatedAt: raw.CreatedAt,
-		UpdatedAt: raw.UpdatedAt,
-		MergedAt:  raw.MergedAt,
-	}, nil
+	return prs, nil
 }
 
 func (c *Client) fetchTags(ctx context.Context, owner, name string) ([]model.Tag, error) {
@@ -192,32 +206,72 @@ func (c *Client) fetchTags(ctx context.Context, owner, name string) ([]model.Tag
 }
 
 func (c *Client) fetchIssues(ctx context.Context, owner, name string) ([]model.Issue, error) {
+	states := []string{"open", "closed"}
+	results := make([][]model.Issue, len(states))
+
+	group, ctx := errgroup.WithContext(ctx)
+	for i, state := range states {
+		group.Go(func() error {
+			issues, err := c.fetchIssueState(ctx, owner, name, state)
+			if err != nil {
+				return err
+			}
+			results[i] = issues
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+
+	issues := make([]model.Issue, 0, maxIssuesPerState*len(states))
+	for _, stateIssues := range results {
+		issues = append(issues, stateIssues...)
+	}
+	sort.SliceStable(issues, func(i, j int) bool {
+		return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
+	})
+	return issues, nil
+}
+
+func (c *Client) fetchIssueState(ctx context.Context, owner, name, state string) ([]model.Issue, error) {
 	var raws []ghIssue
-	path := fmt.Sprintf("%s/issues?state=open&per_page=100", repoPath(owner, name))
+	path := fmt.Sprintf(
+		"%s/issues?state=%s&sort=updated&direction=desc&per_page=%d",
+		repoPath(owner, name),
+		url.QueryEscape(state),
+		maxIssuesPerState,
+	)
 	if err := c.get(ctx, path, &raws); err != nil {
 		return nil, err
 	}
-	issues := make([]model.Issue, 0, maxIssues)
+	issues := make([]model.Issue, 0, len(raws))
 	for _, raw := range raws {
 		if raw.PullRequest != nil {
 			continue // the issues endpoint also returns pull requests
 		}
-		if len(issues) == maxIssues {
+		if len(issues) == maxIssuesPerState {
 			break
 		}
 		labels := make([]string, 0, len(raw.Labels))
 		for _, label := range raw.Labels {
 			labels = append(labels, label.Name)
 		}
+		issueState := raw.State
+		if issueState == "" {
+			issueState = state
+		}
 		issues = append(issues, model.Issue{
 			Number:    raw.Number,
 			Title:     raw.Title,
+			State:     issueState,
 			Author:    raw.User.toModel(),
 			Labels:    labels,
 			Comments:  raw.Comments,
 			HTMLURL:   raw.HTMLURL,
 			CreatedAt: raw.CreatedAt,
 			UpdatedAt: raw.UpdatedAt,
+			ClosedAt:  raw.ClosedAt,
 		})
 	}
 	return issues, nil
@@ -377,6 +431,7 @@ type ghPullRequest struct {
 	CreatedAt time.Time  `json:"created_at"`
 	UpdatedAt time.Time  `json:"updated_at"`
 	MergedAt  *time.Time `json:"merged_at"`
+	ClosedAt  *time.Time `json:"closed_at"`
 }
 
 type ghTag struct {
@@ -387,13 +442,15 @@ type ghTag struct {
 }
 
 type ghIssue struct {
-	Number      int       `json:"number"`
-	Title       string    `json:"title"`
-	User        ghUser    `json:"user"`
-	HTMLURL     string    `json:"html_url"`
-	Comments    int       `json:"comments"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Number      int        `json:"number"`
+	Title       string     `json:"title"`
+	State       string     `json:"state"`
+	User        ghUser     `json:"user"`
+	HTMLURL     string     `json:"html_url"`
+	Comments    int        `json:"comments"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+	ClosedAt    *time.Time `json:"closed_at"`
 	PullRequest *struct {
 		URL string `json:"url"`
 	} `json:"pull_request"`

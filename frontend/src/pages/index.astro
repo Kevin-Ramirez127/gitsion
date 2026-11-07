@@ -8,6 +8,7 @@ import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
 import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
+import { isOpenIssue } from '../lib/collections';
 import { getHeroCopy } from '../lib/config';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
@@ -61,7 +62,10 @@ const searchedRepos =
         return searchTerms.every((term) => haystack.includes(term));
       });
 
-const totalIssues = searchedRepos.reduce((total, repo) => total + repo.issues.length, 0);
+const totalIssues = searchedRepos.reduce(
+  (total, repo) => total + repo.issues.filter(isOpenIssue).length,
+  0,
+);
 const openLatestPrs = searchedRepos.filter(
   (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
 ).length;
@@ -78,7 +82,11 @@ const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0)
 const allActivities = buildActivityFeed(searchedRepos);
 
 const availableLabels = [
-  ...new Set(searchedRepos.flatMap((repo) => repo.issues.flatMap((issue) => issue.labels))),
+  ...new Set(
+    searchedRepos.flatMap((repo) =>
+      repo.issues.filter(isOpenIssue).flatMap((issue) => issue.labels),
+    ),
+  ),
 ].sort((a, b) => a.localeCompare(b));
 const availableLabelSet = new Set(availableLabels);
 const selectedLabels = new Set(requestedLabels.filter((label) => availableLabelSet.has(label)));
@@ -258,12 +266,14 @@ function labelHref(label: string): string {
       value={plainNumber(totalIssues)}
       hint="across tracked repositories"
       icon="issue"
+      href="/issues"
     />
     <StatCard
       label="Repos with open PR"
       value={plainNumber(openLatestPrs)}
       hint="with an active pull request"
       icon="pull"
+      href="/pulls"
     />
   </section>
 

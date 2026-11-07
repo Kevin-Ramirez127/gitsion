@@ -21,6 +21,8 @@ limit. Private repositories are never tracked.
 - Public read-only dashboard with no viewer accounts; adding, removing, refreshing and syncing require an admin token and happen at `/admin`.
 - Private repositories are rejected, even when `GITHUB_TOKEN` can see them.
 - Activity feed of pushes, pull requests and issues across tracked repositories, newest-first inside each group, with actor avatars, labels, relative times and a show-all view.
+- Dedicated issues page with tag filters ordered by how often each tag appears, plus separate open and closed sections with ten-item pages and “Show more” buttons.
+- Dedicated pull request page with separate open and closed/merged sections, ten-item pages and “Show more” buttons.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
 - Always-visible search bar that matches project names, owners and cached contributors. Search combines with the feed filters and updates the dashboard in place.
@@ -144,8 +146,8 @@ changes only dark mode.
 
 ### GitHub rate limits
 
-A snapshot costs **5 requests** (repository, latest PR, tags, first issues page,
-top contributors). Without a token GitHub allows 60 requests/hour, so the backend
+A snapshot costs **6 requests** (repository, pull requests, tags, open issues
+page, closed issues page, top contributors). Without a token GitHub allows 60 requests/hour, so the backend
 defaults to a 30-minute cadence and warns at startup. That comfortably covers a handful of
 public repositories. Add `GITHUB_TOKEN` for more repositories or a faster cadence.
 
@@ -240,7 +242,7 @@ Errors use a consistent envelope:
 
 - Tracking validates the repository against GitHub, rejects non-public repositories, and stores the first snapshot immediately.
 - A tracker goroutine syncs every tracked repository on the configured interval. Concurrent refreshes of the same repo are collapsed with `singleflight`.
-- Each snapshot stores repository metadata, the latest updated PR (any state), up to 10 tags, up to 25 open issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
+- Each snapshot stores repository metadata, up to 100 pull requests (open and closed/merged), the latest updated PR, up to 10 tags, up to 100 open and 100 closed issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
 - If a sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
 - MongoDB has a unique index on the normalized `owner/name`, so case variants cannot be tracked twice.
 
@@ -256,7 +258,7 @@ backend/
   internal/service/       track, untrack, refresh, background sync
   internal/store/         Mongo implementation + integration test
 frontend/
-  src/pages/              feed, detail page, admin login, form-action proxies
+  src/pages/              feed, issues, pull requests, detail page, admin login, form-action proxies
   src/components/         activity feed, forms, panels, tags, issues, icons
   src/lib/                typed API client, runtime branding/theme config, auth/session helper and formatting helpers
   src/middleware.ts       admin-session guard + security headers (CSP, nosniff, frame denial)
@@ -288,7 +290,8 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
 - **Private repositories are not supported.** A `GITHUB_TOKEN` can raise the rate limit, but repositories whose visibility is not public are rejected and never shown.
 - Only the repository owner/org and top contributors (up to 100, used for search) are stored; there is no full collaborator or permission model.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
-- The feed is built from cached snapshots: one push timestamp per repository, the latest pull request per repository, and up to 25 open issues per repository. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
-- Issue lists show up to 25 open issues per repository (fewer if the first 100 issue/PR
-  entries contain many PRs); the “open items” metric is GitHub's count and includes pull requests.
+- The feed is built from cached snapshots: one push timestamp per repository, the latest pull request per repository, and cached open issues per repository. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
+- The issues page (`/issues`) lists open and closed issues across tracked repositories. Tags are ordered by frequency and can be combined. Each section shows ten items before “Show more”; the cache holds up to 100 open and 100 closed issues per repository.
+- The pull request page (`/pulls`) lists open and closed/merged pull requests across tracked repositories, with the same ten-item sections. The cache holds up to 100 pull requests per repository.
+- Issue lists on repository pages show cached open issues; the “open items” metric is GitHub's count and includes pull requests.
 - No webhooks, charts, commit history or multi-user accounts. The API reads cached snapshots; background sync plus manual refresh keeps them current.

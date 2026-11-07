@@ -1,18 +1,24 @@
 ---
 import Icon from './Icon.astro';
-import type { Issue } from '../lib/types';
-import { absoluteTime, relativeTime } from '../lib/format';
+import type { IssueEntry } from '../lib/collections';
+import { absoluteTime, relativeTime, repositoryPath } from '../lib/format';
 
 interface Props {
-  issues: Issue[];
+  entries: IssueEntry[];
+  showRepo?: boolean;
+  emptyText?: string;
 }
 
-const { issues } = Astro.props;
+const {
+  entries,
+  showRepo = false,
+  emptyText = 'No open issues. The issue tracker is clear.',
+} = Astro.props;
 ---
 
-{issues.length > 0 ? (
+{entries.length > 0 ? (
   <ul class="issue-list">
-    {issues.map((issue) => (
+    {entries.map(({ issue, repo }) => (
       <li class="issue-item">
         <span class="issue-icon" aria-hidden="true">
           <Icon name="issue" size={14} />
@@ -28,8 +34,18 @@ const { issues } = Astro.props;
             {issue.title}
           </a>
           <div class="issue-meta">
+            {issue.state === 'closed' && <span class="badge badge-closed">Closed</span>}
+            {showRepo && (
+              <a class="issue-repo" href={repositoryPath(repo.owner.login, repo.name)}>
+                {repo.fullName}
+              </a>
+            )}
             <span title={absoluteTime(issue.createdAt)}>
-              opened {relativeTime(issue.createdAt)} by {issue.author.login}
+              {issue.state === 'closed' && issue.closedAt
+                ? `closed ${relativeTime(issue.closedAt)}`
+                : `opened ${relativeTime(issue.createdAt)}`}
+              {' by '}
+              {issue.author.login}
             </span>
             {issue.comments > 0 && <span>{issue.comments} comments</span>}
           </div>
@@ -45,5 +61,5 @@ const { issues } = Astro.props;
     ))}
   </ul>
 ) : (
-  <p class="empty-inline">No open issues. The issue tracker is clear.</p>
+  <p class="empty-inline">{emptyText}</p>
 )}

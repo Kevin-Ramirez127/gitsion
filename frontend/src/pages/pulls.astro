@@ -1,0 +1,187 @@
+---
+import Layout from '../layouts/Layout.astro';
+import EmptyState from '../components/EmptyState.astro';
+import Icon from '../components/Icon.astro';
+import PullRequestList from '../components/PullRequestList.astro';
+import { ApiError, listRepositories } from '../lib/backend';
+import {
+  collectPullRequests,
+  sortPullRequestEntries,
+} from '../lib/collections';
+import { getSiteConfig } from '../lib/config';
+import { plainNumber } from '../lib/format';
+import type { Repository } from '../lib/types';
+
+const site = getSiteConfig();
+const PAGE_SIZE = 10;
+
+const searchParams = Astro.url.searchParams;
+const showAllOpen = searchParams.get('open') === 'all';
+const showAllClosed = searchParams.get('closed') === 'all';
+
+let repos: Repository[] = [];
+let loadError = '';
+
+try {
+  repos = await listRepositories();
+} catch (error) {
+  loadError =
+    error instanceof ApiError
+      ? error.message
+      : 'Could not load pull requests. Try again shortly.';
+}
+
+const allPullRequests = collectPullRequests(repos);
+const openPullRequests = sortPullRequestEntries(
+  allPullRequests.filter(({ pr }) => pr.state === 'open'),
+  false,
+);
+const closedPullRequests = sortPullRequestEntries(
+  allPullRequests.filter(({ pr }) => pr.state !== 'open'),
+  true,
+);
+const visibleOpen = showAllOpen ? openPullRequests : openPullRequests.slice(0, PAGE_SIZE);
+const visibleClosed = showAllClosed
+  ? closedPullRequests
+  : closedPullRequests.slice(0, PAGE_SIZE);
+const openTruncated = !showAllOpen && openPullRequests.length > PAGE_SIZE;
+const closedTruncated = !showAllClosed && closedPullRequests.length > PAGE_SIZE;
+
+function pullsQuery(overrides: { openAll?: boolean; closedAll?: boolean } = {}): string {
+  const openAll = overrides.openAll ?? showAllOpen;
+  const closedAll = overrides.closedAll ?? showAllClosed;
+
+  const params = new URLSearchParams();
+  if (openAll) params.set('open', 'all');
+  if (closedAll) params.set('closed', 'all');
+
+  const search = params.toString();
+  return search ? `/pulls?${search}` : '/pulls';
+}
+---
+
+<Layout
+  title={`Pull requests · ${site.name}`}
+  description={`Open, merged and closed pull requests across repositories tracked on ${site.name}.`}
+>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <Icon name="pull" size={13} /> Pull requests
+      </p>
+      <h1>
+        Work in progress,
+        <br />
+        <em>ready to review.</em>
+      </h1>
+      <p class="lede">
+        Every cached pull request across tracked repositories. See what is still
+        open, then browse what was merged or closed.
+      </p>
+    </div>
+    <div class="hero-aside">
+      <div class="track-form">
+        <p class="form-label">At a glance</p>
+        <p class="form-hint">
+          {plainNumber(openPullRequests.length)} open · {plainNumber(closedPullRequests.length)}
+          {' '}closed or merged across {plainNumber(repos.length)}
+          {' '}{repos.length === 1 ? 'repository' : 'repositories'}.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {loadError && (
+    <div class="banner" role="alert">
+      <Icon name="alert" size={18} />
+      <div>
+        <strong>Could not load pull requests</strong>
+        <p>{loadError}</p>
+      </div>
+    </div>
+  )}
+
+  {repos.length === 0 && !loadError ? (
+    <EmptyState
+      title="Nothing tracked yet"
+      text="No repositories are tracked on this instance yet, so there are no pull requests to show."
+      icon="repo"
+    >
+      <a class="btn" href="/">Back to dashboard</a>
+    </EmptyState>
+  ) : allPullRequests.length === 0 && !loadError ? (
+    <EmptyState
+      title="No pull requests cached yet"
+      text="Pull requests will appear here after the next successful sync of a tracked repository."
+      icon="pull"
+    >
+      <a class="btn" href="/">Back to dashboard</a>
+    </EmptyState>
+  ) : allPullRequests.length > 0 ? (
+    <>
+      <section class="collection-section" aria-labelledby="open-pulls-title">
+        <div class="section-head">
+          <h2 class="section-title" id="open-pulls-title">Open pull requests</h2>
+          <span class="section-note">
+            {plainNumber(openPullRequests.length)}
+            {' '}{openPullRequests.length === 1 ? 'pull request' : 'pull requests'}
+            {openTruncated && ` · showing ${plainNumber(visibleOpen.length)}`}
+          </span>
+        </div>
+        <PullRequestList
+          entries={visibleOpen}
+          showRepo
+          emptyText="No open pull requests. Nothing is waiting for review."
+        />
+        {openPullRequests.length > PAGE_SIZE && (
+          <div class="feed-more">
+            {showAllOpen ? (
+              <a class="btn btn-ghost" href={pullsQuery({ openAll: false })}>
+                Show first {plainNumber(PAGE_SIZE)}
+              </a>
+            ) : (
+              <a class="btn" href={pullsQuery({ openAll: true })}>
+                Show more open pull requests
+                <span class="feed-show-more-count">
+                  +{plainNumber(openPullRequests.length - PAGE_SIZE)}
+                </span>
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section class="collection-section" aria-labelledby="closed-pulls-title">
+        <div class="section-head">
+          <h2 class="section-title" id="closed-pulls-title">Closed &amp; merged</h2>
+          <span class="section-note">
+            {plainNumber(closedPullRequests.length)}
+            {' '}{closedPullRequests.length === 1 ? 'pull request' : 'pull requests'}
+            {closedTruncated && ` · showing ${plainNumber(visibleClosed.length)}`}
+          </span>
+        </div>
+        <PullRequestList
+          entries={visibleClosed}
+          showRepo
+          emptyText="No closed or merged pull requests cached yet."
+        />
+        {closedPullRequests.length > PAGE_SIZE && (
+          <div class="feed-more">
+            {showAllClosed ? (
+              <a class="btn btn-ghost" href={pullsQuery({ closedAll: false })}>
+                Show first {plainNumber(PAGE_SIZE)}
+              </a>
+            ) : (
+              <a class="btn" href={pullsQuery({ closedAll: true })}>
+                Show more closed pull requests
+                <span class="feed-show-more-count">
+                  +{plainNumber(closedPullRequests.length - PAGE_SIZE)}
+                </span>
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+    </>
+  ) : null}
+</Layout>

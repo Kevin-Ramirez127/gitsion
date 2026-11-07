@@ -487,4 +487,19 @@ func normalize(repo *model.Repository) {
 	if repo.Issues == nil {
 		repo.Issues = []model.Issue{}
 	}
+	for i := range repo.Issues {
+		// Snapshots written before issue states were stored only contain open
+		// issues, so an empty state means open.
+		if repo.Issues[i].State == "" {
+			repo.Issues[i].State = "open"
+		}
+	}
+	if repo.PullRequests == nil {
+		repo.PullRequests = []model.PullRequest{}
+	}
+	// Older snapshots only kept the latest pull request. Surface it on the
+	// dedicated pull request page until the next sync fills the full list.
+	if len(repo.PullRequests) == 0 && repo.LatestPR != nil {
+		repo.PullRequests = []model.PullRequest{*repo.LatestPR}
+	}
 }

@@ -1,5 +1,6 @@
 ---
 import Icon from './Icon.astro';
+import { isOpenIssue } from '../lib/collections';
 import type { Repository } from '../lib/types';
 import {
   absoluteTime,
@@ -67,7 +68,7 @@ const detailsHref = repositoryPath(repo.owner.login, repo.name);
       {repo.language || 'Unknown'}
     </span>
     <span class="meta-item">
-      <Icon name="issue" size={13} /> {compactNumber(repo.issues.length)}
+      <Icon name="issue" size={13} /> {compactNumber(repo.issues.filter(isOpenIssue).length)}
     </span>
   </div>
 

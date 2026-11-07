@@ -413,5 +413,6 @@ func cloneRepo(repo *model.Repository) *model.Repository {
 	clone.Topics = append([]string(nil), repo.Topics...)
 	clone.Tags = append([]model.Tag(nil), repo.Tags...)
 	clone.Issues = append([]model.Issue(nil), repo.Issues...)
+	clone.PullRequests = append([]model.PullRequest(nil), repo.PullRequests...)
 	return &clone
 }

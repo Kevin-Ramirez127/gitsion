@@ -6,16 +6,28 @@ interface Props {
   value: string;
   hint?: string;
   icon: string;
+  href?: string;
 }
 
-const { label, value, hint, icon } = Astro.props;
+const { label, value, hint, icon, href } = Astro.props;
 ---
 
-<div class="stat-card">
-  <div class="stat-label">
-    <Icon name={icon} size={13} />
-    {label}
+{href ? (
+  <a class="stat-card is-link" href={href} aria-label={`${label}: ${value}`}>
+    <div class="stat-label">
+      <Icon name={icon} size={13} />
+      {label}
+    </div>
+    <div class="stat-value">{value}</div>
+    {hint && <div class="stat-hint">{hint}</div>}
+  </a>
+) : (
+  <div class="stat-card">
+    <div class="stat-label">
+      <Icon name={icon} size={13} />
+      {label}
+    </div>
+    <div class="stat-value">{value}</div>
+    {hint && <div class="stat-hint">{hint}</div>}
   </div>
-  <div class="stat-value">{value}</div>
-  {hint && <div class="stat-hint">{hint}</div>}
-</div>
+)}

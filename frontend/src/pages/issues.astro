@@ -1,0 +1,262 @@
+---
+import Layout from '../layouts/Layout.astro';
+import EmptyState from '../components/EmptyState.astro';
+import Icon from '../components/Icon.astro';
+import IssueCards from '../components/IssueCards.astro';
+import { ApiError, listRepositories } from '../lib/backend';
+import {
+  collectIssues,
+  countIssueTags,
+  filterIssuesByTags,
+  sortIssueEntries,
+} from '../lib/collections';
+import { getSiteConfig } from '../lib/config';
+import { plainNumber } from '../lib/format';
+import type { Repository } from '../lib/types';
+
+const site = getSiteConfig();
+const PAGE_SIZE = 10;
+
+const searchParams = Astro.url.searchParams;
+const requestedTags = searchParams.getAll('tag').map((tag) => tag.trim()).filter(Boolean);
+const showAllOpen = searchParams.get('open') === 'all';
+const showAllClosed = searchParams.get('closed') === 'all';
+
+let repos: Repository[] = [];
+let loadError = '';
+
+try {
+  repos = await listRepositories();
+} catch (error) {
+  loadError =
+    error instanceof ApiError ? error.message : 'Could not load issues. Try again shortly.';
+}
+
+const allIssues = collectIssues(repos);
+const tagCounts = countIssueTags(allIssues);
+const availableTags = new Set(tagCounts.map(({ tag }) => tag));
+const selectedTags = new Set(requestedTags.filter((tag) => availableTags.has(tag)));
+const filteredIssues = filterIssuesByTags(allIssues, selectedTags);
+
+const openIssues = sortIssueEntries(
+  filteredIssues.filter(({ issue }) => issue.state !== 'closed'),
+  false,
+);
+const closedIssues = sortIssueEntries(
+  filteredIssues.filter(({ issue }) => issue.state === 'closed'),
+  true,
+);
+const visibleOpen = showAllOpen ? openIssues : openIssues.slice(0, PAGE_SIZE);
+const visibleClosed = showAllClosed ? closedIssues : closedIssues.slice(0, PAGE_SIZE);
+const openTruncated = !showAllOpen && openIssues.length > PAGE_SIZE;
+const closedTruncated = !showAllClosed && closedIssues.length > PAGE_SIZE;
+const hasFilters = selectedTags.size > 0;
+
+interface IssuesQuery {
+  tags: string[];
+  openAll: boolean;
+  closedAll: boolean;
+}
+
+function issuesQuery(overrides: Partial<IssuesQuery> = {}): string {
+  const tags = overrides.tags ?? [...selectedTags];
+  const openAll = overrides.openAll ?? showAllOpen;
+  const closedAll = overrides.closedAll ?? showAllClosed;
+
+  const params = new URLSearchParams();
+  for (const tag of tags) params.append('tag', tag);
+  if (openAll) params.set('open', 'all');
+  if (closedAll) params.set('closed', 'all');
+
+  const search = params.toString();
+  return search ? `/issues?${search}` : '/issues';
+}
+
+function tagHref(tag: string): string {
+  const next = new Set(selectedTags);
+  if (next.has(tag)) {
+    next.delete(tag);
+  } else {
+    next.add(tag);
+  }
+  return issuesQuery({ tags: [...next] });
+}
+---
+
+<Layout
+  title={`Issues · ${site.name}`}
+  description={`Open and closed issues across repositories tracked on ${site.name}.`}
+>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <Icon name="issue" size={13} /> Issues
+      </p>
+      <h1>
+        Open work,
+        <br />
+        <em>closed loops.</em>
+      </h1>
+      <p class="lede">
+        Every cached issue across tracked repositories. Filter by tag, then work
+        through what is still open or look back at what is already closed.
+      </p>
+    </div>
+    <div class="hero-aside">
+      <div class="track-form">
+        <p class="form-label">At a glance</p>
+        <p class="form-hint">
+          {plainNumber(openIssues.length)} open · {plainNumber(closedIssues.length)} closed
+          across {plainNumber(repos.length)} {repos.length === 1 ? 'repository' : 'repositories'}.
+          {hasFilters && ' Tag filters are active.'}
+        </p>
+      </div>
+    </div>
+  </section>
+
+  {loadError && (
+    <div class="banner" role="alert">
+      <Icon name="alert" size={18} />
+      <div>
+        <strong>Could not load issues</strong>
+        <p>{loadError}</p>
+      </div>
+    </div>
+  )}
+
+  {allIssues.length > 0 && (
+    <details class="filters issues-filters" open>
+      <summary class="filters-head">
+        <span class="filters-title">Filter by issue tag</span>
+        <span class="filters-status">
+          {selectedTags.size > 0
+            ? `${plainNumber(filteredIssues.length)} matching ${filteredIssues.length === 1 ? 'issue' : 'issues'}`
+            : `${plainNumber(tagCounts.length)} tags · most repeated first`}
+        </span>
+        <span class="filter-toggle" aria-hidden="true"></span>
+      </summary>
+      <div class="filters-body">
+        <div class="filter-row">
+          <span class="filter-label">Tags</span>
+          <a
+            class:list={['filter-chip', { 'is-active': selectedTags.size === 0 }]}
+            href={issuesQuery({ tags: [] })}
+          >
+            All <span class="filter-count">{plainNumber(allIssues.length)}</span>
+          </a>
+          {tagCounts.map(({ tag, count }) => (
+            <a
+              class:list={['filter-chip', { 'is-active': selectedTags.has(tag) }]}
+              href={tagHref(tag)}
+            >
+              {tag} <span class="filter-count">{plainNumber(count)}</span>
+            </a>
+          ))}
+        </div>
+        {hasFilters && (
+          <div class="filters-actions">
+            <a class="filters-clear" href={issuesQuery({ tags: [] })}>
+              Clear tag filter
+            </a>
+          </div>
+        )}
+      </div>
+    </details>
+  )}
+
+  {repos.length === 0 && !loadError ? (
+    <EmptyState
+      title="Nothing tracked yet"
+      text="No repositories are tracked on this instance yet, so there are no issues to show."
+      icon="repo"
+    >
+      <a class="btn" href="/">Back to dashboard</a>
+    </EmptyState>
+  ) : allIssues.length === 0 && !loadError ? (
+    <EmptyState
+      title="No issues cached yet"
+      text="Issues will appear here after the next successful sync of a tracked repository."
+      icon="issue"
+    >
+      <a class="btn" href="/">Back to dashboard</a>
+    </EmptyState>
+  ) : allIssues.length > 0 && filteredIssues.length === 0 ? (
+    <EmptyState
+      title="No issues match these tags"
+      text="Try selecting a different tag or clear the filter to see every open and closed issue."
+      icon="filter"
+    >
+      <a class="btn" href={issuesQuery({ tags: [] })}>Clear tag filter</a>
+    </EmptyState>
+  ) : allIssues.length > 0 ? (
+    <>
+      <section class="collection-section" aria-labelledby="open-issues-title">
+        <div class="section-head">
+          <h2 class="section-title" id="open-issues-title">Open issues</h2>
+          <span class="section-note">
+            {plainNumber(openIssues.length)} {openIssues.length === 1 ? 'issue' : 'issues'}
+            {openTruncated && ` · showing ${plainNumber(visibleOpen.length)}`}
+          </span>
+        </div>
+        <IssueCards
+          entries={visibleOpen}
+          emptyText={
+            hasFilters
+              ? 'No open issues match these tags.'
+              : 'No open issues. The issue tracker is clear.'
+          }
+        />
+        {openIssues.length > PAGE_SIZE && (
+          <div class="feed-more">
+            {showAllOpen ? (
+              <a class="btn btn-ghost" href={issuesQuery({ openAll: false })}>
+                Show first {plainNumber(PAGE_SIZE)}
+              </a>
+            ) : (
+              <a class="btn" href={issuesQuery({ openAll: true })}>
+                Show more open issues
+                <span class="feed-show-more-count">
+                  +{plainNumber(openIssues.length - PAGE_SIZE)}
+                </span>
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section class="collection-section" aria-labelledby="closed-issues-title">
+        <div class="section-head">
+          <h2 class="section-title" id="closed-issues-title">Closed issues</h2>
+          <span class="section-note">
+            {plainNumber(closedIssues.length)} {closedIssues.length === 1 ? 'issue' : 'issues'}
+            {closedTruncated && ` · showing ${plainNumber(visibleClosed.length)}`}
+          </span>
+        </div>
+        <IssueCards
+          entries={visibleClosed}
+          emptyText={
+            hasFilters
+              ? 'No closed issues match these tags.'
+              : 'No closed issues cached yet.'
+          }
+        />
+        {closedIssues.length > PAGE_SIZE && (
+          <div class="feed-more">
+            {showAllClosed ? (
+              <a class="btn btn-ghost" href={issuesQuery({ closedAll: false })}>
+                Show first {plainNumber(PAGE_SIZE)}
+              </a>
+            ) : (
+              <a class="btn" href={issuesQuery({ closedAll: true })}>
+                Show more closed issues
+                <span class="feed-show-more-count">
+                  +{plainNumber(closedIssues.length - PAGE_SIZE)}
+                </span>
+              </a>
+            )}
+          </div>
+        )}
+      </section>
+    </>
+  ) : null}
+</Layout>
