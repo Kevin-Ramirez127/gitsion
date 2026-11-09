@@ -1,0 +1,46 @@
+---
+import Layout from '../layouts/Layout.astro';
+import EmptyState from '../components/EmptyState.astro';
+import Icon from '../components/Icon.astro';
+import { getSiteConfig } from '../lib/config';
+
+const site = getSiteConfig();
+Astro.response.status = 404;
+---
+
+<Layout
+  seo={{
+    title: `Page not found · ${site.name}`,
+    description: `The page you requested does not exist on ${site.name}.`,
+    route: Astro.url.pathname,
+    entityType: 'page',
+    indexable: false,
+    followable: false,
+  }}
+>
+  <section class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <Icon name="alert" size={13} /> 404
+      </p>
+      <h1>
+        This page went
+        <br />
+        <em>off the grid.</em>
+      </h1>
+      <p class="lede">
+        The address does not exist on this dashboard. It may have been removed,
+        or the link may be mistyped.
+      </p>
+    </div>
+  </section>
+
+  <EmptyState
+    title="Page not found"
+    text="Head back to the activity feed, or browse open issues and pull requests across tracked repositories."
+    icon="search"
+  >
+    <a class="btn" href="/">Back to dashboard</a>
+    <a class="btn btn-ghost" href="/issues">Browse issues</a>
+  </EmptyState>
+</Layout>

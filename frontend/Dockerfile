@@ -6,6 +6,14 @@ COPY package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
+
+# Optional build-time SEO identity. It only feeds the easeo contract emitted to
+# dist/client/.easeo; runtime canonical URLs still read SITE_URL at container start.
+ARG SITE_URL=""
+ARG SITE_NAME="gitsion"
+ENV SITE_URL=${SITE_URL} \
+    SITE_NAME=${SITE_NAME}
+
 RUN npm run build && npm prune --omit=dev
 
 FROM node:24-alpine AS runtime

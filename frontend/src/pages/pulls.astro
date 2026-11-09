@@ -46,6 +46,10 @@ const visibleClosed = showAllClosed
   : closedPullRequests.slice(0, PAGE_SIZE);
 const openTruncated = !showAllOpen && openPullRequests.length > PAGE_SIZE;
 const closedTruncated = !showAllClosed && closedPullRequests.length > PAGE_SIZE;
+// Any query string is a paginated variant of the clean pull request page.
+const filteredView = Astro.url.search.length > 0;
+const seoTitle = `Pull requests · ${site.name}`;
+const seoDescription = `Open, merged and closed pull requests across repositories tracked on ${site.name}.`;
 
 function pullsQuery(overrides: { openAll?: boolean; closedAll?: boolean } = {}): string {
   const openAll = overrides.openAll ?? showAllOpen;
@@ -61,8 +65,13 @@ function pullsQuery(overrides: { openAll?: boolean; closedAll?: boolean } = {}):
 ---
 
 <Layout
-  title={`Pull requests · ${site.name}`}
-  description={`Open, merged and closed pull requests across repositories tracked on ${site.name}.`}
+  seo={{
+    title: seoTitle,
+    description: seoDescription,
+    route: '/pulls',
+    entityType: filteredView ? 'search' : 'taxonomy',
+    indexable: !filteredView,
+  }}
 >
   <section class="hero">
     <div class="hero-copy">

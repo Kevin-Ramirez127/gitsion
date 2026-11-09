@@ -51,6 +51,14 @@ const visibleClosed = showAllClosed ? closedIssues : closedIssues.slice(0, PAGE_
 const openTruncated = !showAllOpen && openIssues.length > PAGE_SIZE;
 const closedTruncated = !showAllClosed && closedIssues.length > PAGE_SIZE;
 const hasFilters = selectedTags.size > 0;
+// Any query string is a filtered or paginated variant of the clean page.
+const filteredView = Astro.url.search.length > 0;
+const seoTitle = hasFilters
+  ? `Issues tagged ${[...selectedTags].map((tag) => `“${tag}”`).join(' or ')} · ${site.name}`
+  : `Issues · ${site.name}`;
+const seoDescription = hasFilters
+  ? `Open and closed issues tagged ${[...selectedTags].join(', ')} across repositories tracked on ${site.name}.`
+  : `Open and closed issues across repositories tracked on ${site.name}.`;
 
 interface IssuesQuery {
   tags: string[];
@@ -84,8 +92,13 @@ function tagHref(tag: string): string {
 ---
 
 <Layout
-  title={`Issues · ${site.name}`}
-  description={`Open and closed issues across repositories tracked on ${site.name}.`}
+  seo={{
+    title: seoTitle,
+    description: seoDescription,
+    route: '/issues',
+    entityType: filteredView ? 'search' : 'taxonomy',
+    indexable: !filteredView,
+  }}
 >
   <section class="hero">
     <div class="hero-copy">

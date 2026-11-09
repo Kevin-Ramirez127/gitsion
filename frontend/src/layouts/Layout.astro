@@ -1,21 +1,32 @@
 ---
 import '../styles/global.css';
 import { getSiteConfig, getThemeColor, getThemeStyle } from '../lib/config';
+import { buildPageSeo, type SeoInput } from '../lib/seo';
 
 interface Props {
-  title?: string;
-  description?: string;
+  seo?: SeoInput;
 }
 
 const site = getSiteConfig();
-const {
-  title = site.title,
-  description = site.description,
-} = Astro.props;
+const pathname = Astro.url.pathname;
+const seo = buildPageSeo(
+  Astro.props.seo ?? {
+    title: site.title,
+    description: site.description,
+    route: pathname,
+    indexable: pathname === '/',
+  },
+  Astro.url,
+  Astro.request.headers,
+);
+
+// Reinforce the meta robots directive for crawlers that inspect headers.
+if (seo.noindex) {
+  Astro.response.headers.set('X-Robots-Tag', seo.robots);
+}
 
 const isAdmin = Astro.locals.isAdmin;
 const writesEnabled = Astro.locals.writesEnabled;
-const pathname = Astro.url.pathname;
 const isHome = pathname === '/';
 const theme = Astro.cookies.get('gitsion_theme')?.value === 'light' ? 'light' : 'dark';
 const nextTheme = theme === 'dark' ? 'light' : 'dark';
@@ -28,11 +39,12 @@ const themeStyle = getThemeStyle();
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content={description} />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content={themeColor} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>{title}</title>
+    <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+    <Fragment set:html={seo.head} />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>

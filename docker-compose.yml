@@ -42,7 +42,11 @@ services:
       start_period: 10s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        SITE_URL: ${SITE_URL:-}
+        SITE_NAME: ${SITE_NAME:-gitsion}
     restart: unless-stopped
     init: true
     environment:
@@ -55,6 +59,9 @@ services:
       SITE_TITLE: ${SITE_TITLE:-}
       SITE_DESCRIPTION: ${SITE_DESCRIPTION:-}
       SITE_TAGLINE: ${SITE_TAGLINE:-}
+      SITE_URL: ${SITE_URL:-}
+      SITE_OG_IMAGE: ${SITE_OG_IMAGE:-}
+      SITE_TWITTER: ${SITE_TWITTER:-}
       HERO_TITLE: ${HERO_TITLE:-}
       HERO_DESCRIPTION: ${HERO_DESCRIPTION:-}
       THEME_BG: ${THEME_BG:-}
