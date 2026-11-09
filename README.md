@@ -31,6 +31,7 @@ limit. Private repositories are never tracked.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
 - Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.
 - Empty, stale, 404 and backend-unreachable states are handled in the UI.
+- Search-engine ready: canonical URLs, Open Graph, Twitter Cards and JSON-LD generated with [easeo](https://github.com/emiliano-go/easeo), plus dynamic `robots.txt` and `sitemap.xml` covering every tracked repository.
 - Bulk-import every repository from a GitHub organization/user profile, or from a JSON list, with the interactive `./import` script.
 
 ## Feed views and filters
@@ -57,6 +58,37 @@ owners and filter sections start collapsed; the filter summary still shows the
 matching activity count. Each chip shows how many activities it matches and
 clears with a second click, and a search for a contributor also narrows the feed
 to that contributor's repositories.
+
+## SEO and indexing
+
+Set `SITE_URL` to the public origin in production:
+
+```bash
+SITE_URL=https://gitsion.example.com
+```
+
+The frontend then exposes:
+
+| Endpoint | Contents |
+| --- | --- |
+| `/robots.txt` | Allows the public pages, blocks `/admin`, `/api/` and `/healthz`, and points at the sitemap. |
+| `/sitemap.xml` | The dashboard, `/issues`, `/pulls` and one URL per tracked repository, with `lastmod` timestamps from the cached snapshot. |
+
+Every page gets a canonical URL, a length-clamped title and description, robots
+directives, Open Graph and Twitter Card tags, and JSON-LD from
+[easeo](https://github.com/emiliano-go/easeo). The dashboard is a `WebSite`
+schema with a search action; issues and pull requests are `CollectionPage`;
+repository pages are `WebPage` plus `BreadcrumbList`.
+
+Filtered, paginated and transient views (`?q=`, `?owner=`, `?kind=`, `?label=`,
+`?view=`, `?show=`, `?tag=`, `?open=`, `?closed=` and flash messages) canonicalize
+to the clean page and emit `noindex,follow`, so crawlers see one URL per
+document. `/admin` and the custom 404 page are `noindex,nofollow`.
+
+`SITE_OG_IMAGE` overrides the default `1200×630` social preview at `/og.png`,
+and `SITE_TWITTER` adds a `twitter:site` handle. When `SITE_URL` is set at build
+time, the Astro integration also writes a deterministic SEO contract to
+`dist/client/.easeo/contract.json` for CI validation.
 
 ## Quick start (Docker)
 
@@ -131,6 +163,9 @@ overriding real environment variables). `BACKEND_URL` defaults to
 | `SITE_TITLE` | `<SITE_NAME> · <SITE_TAGLINE>` | Default document title. |
 | `SITE_DESCRIPTION` | built-in description | Default meta description. |
 | `SITE_TAGLINE` | `GitHub activity feed` | Header tagline and default title suffix. |
+| `SITE_URL` | request origin | Public origin used for canonical links, `robots.txt` and `sitemap.xml`. Set it in production. |
+| `SITE_OG_IMAGE` | `/og.png` | Absolute `1200×630` social preview image. |
+| `SITE_TWITTER` | empty | Optional Twitter/X handle for `twitter:site`, including `@`. |
 | `HERO_TITLE` | `Everything that moved,\|newest first.` | Visible dashboard headline. Text after `\|` renders on a second line in the accent color. |
 | `HERO_DESCRIPTION` | built-in intro | Visible dashboard intro paragraph. |
 | `THEME_<TOKEN>` | built-in palette | Override a color in both themes. |
@@ -258,11 +293,11 @@ backend/
   internal/service/       track, untrack, refresh, background sync
   internal/store/         Mongo implementation + integration test
 frontend/
-  src/pages/              feed, issues, pull requests, detail page, admin login, form-action proxies
+  src/pages/              feed, issues, pull requests, detail page, admin login, robots.txt, sitemap.xml, 404, form-action proxies
   src/components/         activity feed, forms, panels, tags, issues, icons
-  src/lib/                typed API client, runtime branding/theme config, auth/session helper and formatting helpers
+  src/lib/                typed API client, runtime branding/theme config, easeo SEO builder, auth/session helper and formatting helpers
   src/middleware.ts       admin-session guard + security headers (CSP, nosniff, frame denial)
-  public/                 favicon, confirmation and in-place feed scripts
+  public/                 favicon, Open Graph image, confirmation and in-place feed scripts
 import                    interactive bulk importer (Node, no dependencies)
 docker-compose.yml
 ```

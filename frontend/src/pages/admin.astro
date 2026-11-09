@@ -15,8 +15,14 @@ Astro.response.headers.set('X-Robots-Tag', 'noindex, nofollow');
 ---
 
 <Layout
-  title={`Admin · ${site.name}`}
-  description={`Sign in to manage the repositories tracked by this ${site.name} dashboard.`}
+  seo={{
+    title: `Admin · ${site.name}`,
+    description: `Sign in to manage the repositories tracked by this ${site.name} dashboard.`,
+    route: '/admin',
+    entityType: 'page',
+    indexable: false,
+    followable: false,
+  }}
 >
   <nav class="breadcrumb" aria-label="Breadcrumb">
     <a href="/">Dashboard</a>

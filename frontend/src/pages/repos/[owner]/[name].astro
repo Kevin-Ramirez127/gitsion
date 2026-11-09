@@ -16,6 +16,7 @@ import {
   languageColor,
   plainNumber,
   relativeTime,
+  repositoryPath,
 } from '../../../lib/format';
 import type { Repository } from '../../../lib/types';
 
@@ -46,12 +47,40 @@ try {
 }
 
 const openIssues = repo ? repo.issues.filter(isOpenIssue) : [];
+
+const canonicalRoute = repo
+  ? repositoryPath(repo.owner.login, repo.name)
+  : Astro.url.pathname;
+
+const seo = repo
+  ? {
+      title: `${repo.fullName} · ${site.name}`,
+      description:
+        repo.description ||
+        `Pushes, pull requests and issues from ${repo.fullName} on ${site.name}.`,
+      route: canonicalRoute,
+      entityType: 'page' as const,
+      updatedAt: repo.pushedAt,
+      breadcrumbs: [
+        { name: 'Dashboard', url: '/' },
+        {
+          name: repo.owner.login,
+          url: `/?owner=${encodeURIComponent(repo.owner.login)}`,
+        },
+        { name: repo.name, url: canonicalRoute },
+      ],
+    }
+  : {
+      title: `Repository unavailable · ${site.name}`,
+      description: 'The requested repository is not tracked on this dashboard.',
+      route: Astro.url.pathname,
+      entityType: 'page' as const,
+      indexable: false,
+      followable: false,
+    };
 ---
 
-<Layout
-  title={repo ? `${repo.fullName} · ${site.name}` : `Repository unavailable · ${site.name}`}
-  description={repo?.description || `Repository details on ${site.name}.`}
->
+<Layout seo={seo}>
   <nav class="breadcrumb" aria-label="Breadcrumb">
     <a href="/">Dashboard</a>
     <span class="breadcrumb-sep">/</span>

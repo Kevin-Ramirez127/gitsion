@@ -9,11 +9,12 @@ import StatCard from '../components/StatCard.astro';
 import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
 import { isOpenIssue } from '../lib/collections';
-import { getHeroCopy } from '../lib/config';
+import { getHeroCopy, getSiteConfig } from '../lib/config';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
 
 const hero = getHeroCopy();
+const site = getSiteConfig();
 const searchParams = Astro.url.searchParams;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
 const query = (searchParams.get('q') ?? '').trim();
@@ -121,6 +122,21 @@ const activitySummary = hasFilters
   ? `${plainNumber(activities.length)} of ${plainNumber(allActivities.length)} activities`
   : `${plainNumber(activities.length)} ${activities.length === 1 ? 'activity' : 'activities'}`;
 
+// Any query string is a filtered, paginated or transient view: canonicalize to
+// the clean dashboard and keep it out of the index.
+const filteredView = Astro.url.search.length > 0;
+
+const seoTitle = query
+  ? `Search “${query}” · ${site.name}`
+  : ownerFilter
+    ? `Activity from ${activeOwner} · ${site.name}`
+    : site.title;
+const seoDescription = query
+  ? `Repositories, pushes, pull requests and issues matching “${query}” on ${site.name}.`
+  : ownerFilter
+    ? `Recent pushes, pull requests and issues from repositories owned by ${activeOwner} on ${site.name}.`
+    : site.description;
+
 interface FeedQuery {
   owner: string;
   q: string;
@@ -173,7 +189,15 @@ function labelHref(label: string): string {
 }
 ---
 
-<Layout>
+<Layout
+  seo={{
+    title: seoTitle,
+    description: seoDescription,
+    route: '/',
+    entityType: filteredView ? 'search' : 'home',
+    indexable: !filteredView,
+  }}
+>
   <section class="hero">
     <div class="hero-copy">
       <p class="eyebrow">
