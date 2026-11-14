@@ -29,7 +29,7 @@ limit. Private repositories are never tracked.
   closures without a known actor use neutral wording; in the person view they
   appear under “Other activity” instead of the original author's name.
 - The feed and open-PR repository count inspect all cached pull requests.
-- Dedicated issues page with tag filters ordered by how often each tag appears, plus separate open and closed sections with ten-item pages and “Show more” buttons.
+- Dedicated issues page with multi-select status and tag filters. The status tags sit at the start of the Tags group, tag options narrow to the issues that still match, and multiple selected tags must all be present. Separate open and closed sections keep ten-item pages and “Show more” buttons.
 - Dedicated pull request page with separate open and closed/merged sections, ten-item pages and “Show more” buttons.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
@@ -340,7 +340,7 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
 - Only the repository owner/org and top contributors (up to 100, used for search) are stored; there is no full collaborator or permission model.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
 - The feed is built from cached snapshots: attributed pushes from the latest 100 repository activity records, all cached pull requests, and cached open issues. Merge actors are available only when their matching activity is still in that window; other unknown actors remain unattributed. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
-- The issues page (`/issues`) lists open and closed issues across tracked repositories. Tags are ordered by frequency and can be combined. Each section shows ten items before “Show more”; the cache holds up to 100 open and 100 closed issues per repository.
+- The issues page (`/issues`) lists open and closed issues across tracked repositories. Status and tag filters share one multi-select Tags group: the status tags stay at the start, tag options narrow to the tags still present on the matching issues, and selecting several tags shows only issues that carry all of them. Each section shows ten items before “Show more”; the cache holds up to 100 open and 100 closed issues per repository.
 - The pull request page (`/pulls`) lists open and closed/merged pull requests across tracked repositories, with the same ten-item sections. The cache holds up to 100 pull requests per repository.
 - Issue lists on repository pages show cached open issues; the “open items” metric is GitHub's count and includes pull requests.
 - No webhooks, charts, commit history or multi-user accounts. The API reads cached snapshots; background sync plus manual refresh keeps them current.
