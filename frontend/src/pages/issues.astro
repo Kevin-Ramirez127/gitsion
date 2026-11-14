@@ -204,8 +204,8 @@ function stateHref(state: IssueState): string {
         <span class="filter-toggle" aria-hidden="true"></span>
       </summary>
       <div class="filters-body">
-        <div class="filter-row filter-row-status">
-          <span class="filter-label">Status</span>
+        <div class="filter-row">
+          <span class="filter-label">Tags</span>
           <a
             class:list={[
               'filter-chip',
@@ -226,9 +226,7 @@ function stateHref(state: IssueState): string {
           >
             Closed issues <span class="filter-count">{plainNumber(stateCounts.closed)}</span>
           </a>
-        </div>
-        <div class="filter-row">
-          <span class="filter-label">Tags</span>
+          <span class="filter-divider" aria-hidden="true"></span>
           <a
             class:list={['filter-chip', { 'is-active': selectedTags.size === 0 }]}
             href={issuesQuery({ tags: [] })}

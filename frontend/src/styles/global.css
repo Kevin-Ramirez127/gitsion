@@ -954,6 +954,13 @@ details[open] > summary .filter-toggle::after {
   text-transform: uppercase;
 }
 
+.filter-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--rule-soft);
+}
+
 .filter-chip {
   display: inline-flex;
   align-items: center;

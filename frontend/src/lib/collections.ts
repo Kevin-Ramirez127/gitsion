@@ -104,9 +104,13 @@ export function countIssueTags(entries: IssueEntry[]): TagCount[] {
     .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
 }
 
+/** Every selected tag must be present on the issue (multi-select is AND). */
 export function filterIssuesByTags(entries: IssueEntry[], tags: Set<string>): IssueEntry[] {
   if (tags.size === 0) return entries;
-  return entries.filter(({ issue }) => issue.labels.some((label) => tags.has(label)));
+  return entries.filter(({ issue }) => {
+    const labels = new Set(issue.labels);
+    return [...tags].every((tag) => labels.has(tag));
+  });
 }
 
 /** Resolve an issue state, treating legacy snapshots without a state as open. */

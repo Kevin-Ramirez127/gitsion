@@ -34,22 +34,31 @@ test('legacy snapshots retain their latestPr fallback', () => {
   }
 });
 
-test('issue tag filters narrow the next set of available tags', () => {
+test('issue tag filters require every selected tag and narrow the next set', () => {
   const entry = (labels) => ({ issue: { labels }, repo: { fullName: 'acme/widget' } });
   const entries = [
+    entry(['bug', 'ui', 'help wanted']),
     entry(['bug', 'ui']),
     entry(['bug']),
     entry(['docs']),
   ];
 
   assert.deepEqual(countIssueTags(entries).map(({ tag, count }) => [tag, count]), [
-    ['bug', 2],
+    ['bug', 3],
+    ['ui', 2],
     ['docs', 1],
-    ['ui', 1],
+    ['help wanted', 1],
   ]);
 
-  const matching = filterIssuesByTags(entries, new Set(['bug']));
-  assert.deepEqual(countIssueTags(matching).map(({ tag }) => tag), ['bug', 'ui']);
+  const bugAndUi = filterIssuesByTags(entries, new Set(['bug', 'ui']));
+  assert.equal(bugAndUi.length, 2);
+  assert.deepEqual(countIssueTags(bugAndUi).map(({ tag }) => tag), [
+    'bug',
+    'ui',
+    'help wanted',
+  ]);
+
+  assert.equal(filterIssuesByTags(entries, new Set(['docs', 'ui'])).length, 0);
 });
 
 test('status filters are multi-select and legacy issues count as open', () => {
