@@ -51,7 +51,8 @@ func TestFetchSnapshot(t *testing.T) {
 			"base": {"ref": "main"},
 			"created_at": "2026-01-01T00:00:00Z",
 			"updated_at": "2026-01-03T00:00:00Z",
-			"merged_at": "2026-01-03T00:00:00Z"
+			"merged_at": "2026-01-03T00:00:00Z",
+			"merge_commit_sha": "merge-sha"
 		}]`))
 	})
 	mux.HandleFunc("/repos/acme/widget/tags", func(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +126,14 @@ func TestFetchSnapshot(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`[
 			{
+				"id": 103,
+				"actor": {"login":"maintainer","avatar_url":"https://avatars.example/maintainer","html_url":"https://github.com/maintainer"},
+				"activity_type": "pr_merge",
+				"ref": "refs/heads/main",
+				"after": "merge-sha",
+				"timestamp": "2026-01-03T00:00:00Z"
+			},
+			{
 				"id": 102,
 				"actor": {"login":"octocat","avatar_url":"https://avatars.example/octocat","html_url":"https://github.com/octocat"},
 				"activity_type": "force_push",
@@ -174,6 +183,10 @@ func TestFetchSnapshot(t *testing.T) {
 	}
 	if repo.LatestPR.MergedAt == nil {
 		t.Error("MergedAt is nil")
+	}
+	if repo.LatestPR.MergedBy == nil || repo.LatestPR.MergedBy.Login != "maintainer" ||
+		repo.LatestPR.Author.Login != "octocat" {
+		t.Errorf("merge actor must differ from PR author: %+v", repo.LatestPR)
 	}
 	if len(repo.PullRequests) != 1 || repo.PullRequests[0].Number != 12 {
 		t.Errorf("pull requests = %+v", repo.PullRequests)
@@ -250,22 +263,23 @@ func TestFetchPushesSkipsUnattributedAndNonPushActivities(t *testing.T) {
 		]`))
 	}))
 	defer server.Close()
-	pushes, err := NewClient(server.URL, "").fetchPushes(context.Background(), "acme", "widget")
+	activities, err := NewClient(server.URL, "").fetchRepositoryActivity(context.Background(), "acme", "widget")
 	if err != nil {
 		t.Fatal(err)
 	}
+	pushes := pushesFromActivities(activities)
 	if len(pushes) != 1 || pushes[0].ID != 7 || pushes[0].Actor.Login != "alice" {
 		t.Fatalf("pushes = %+v, want only the attributed complete push", pushes)
 	}
 }
 
-func TestFetchPushesPropagatesAPIFailure(t *testing.T) {
+func TestFetchRepositoryActivityPropagatesAPIFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
 		_, _ = w.Write([]byte(`{"message":"activity unavailable"}`))
 	}))
 	defer server.Close()
-	_, err := NewClient(server.URL, "").fetchPushes(context.Background(), "acme", "widget")
+	_, err := NewClient(server.URL, "").fetchRepositoryActivity(context.Background(), "acme", "widget")
 	var apiErr *APIError
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadGateway {
 		t.Fatalf("error = %v, want APIError 502", err)

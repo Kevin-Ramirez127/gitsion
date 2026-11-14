@@ -25,6 +25,10 @@ limit. Private repositories are never tracked.
   including force pushes. Each sync reads the latest 100 activity records.
   Unattributed records are omitted; older snapshots gain push history on their
   next successful sync.
+- PR merges use the actor of the matching GitHub merge activity. Updates and
+  closures without a known actor use neutral wording; in the person view they
+  appear under “Other activity” instead of the original author's name.
+- The feed and open-PR repository count inspect all cached pull requests.
 - Dedicated issues page with tag filters ordered by how often each tag appears, plus separate open and closed sections with ten-item pages and “Show more” buttons.
 - Dedicated pull request page with separate open and closed/merged sections, ten-item pages and “Show more” buttons.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
@@ -124,7 +128,7 @@ make help          # list targets
 make up            # build + start the full stack
 make logs          # follow logs
 make down          # stop the stack
-make test          # Go tests + Astro type check
+make test          # Go, frontend unit/SSR tests and Astro type checks
 ```
 
 ## Local development
@@ -185,8 +189,10 @@ changes only dark mode.
 
 ### GitHub rate limits
 
-A snapshot costs **6 requests** (repository, pull requests, tags, open issues
-page, closed issues page, top contributors). Without a token GitHub allows 60 requests/hour, so the backend
+A snapshot costs **at least 7 requests** (repository, pull requests, tags, open
+issues, closed issues, top contributors and repository activity). Issue pages
+also contain PRs, so the client reads additional pages until it has 100 actual
+issues per state or reaches the end. Without a token GitHub allows 60 requests/hour, so the backend
 defaults to a 30-minute cadence and warns at startup. That comfortably covers a handful of
 public repositories. Add `GITHUB_TOKEN` for more repositories or a faster cadence.
 
@@ -300,7 +306,7 @@ frontend/
   src/pages/              feed, issues, pull requests, detail page, admin login, robots.txt, sitemap.xml, 404, form-action proxies
   src/components/         activity feed, forms, panels, tags, issues, icons
   src/lib/                typed API client, runtime branding/theme config, easeo SEO builder, auth/session helper and formatting helpers
-  src/middleware.ts       admin-session guard + security headers (CSP, nosniff, frame denial)
+  src/middleware.ts       session state + security headers (mutation guards live in src/lib/admin.ts)
   public/                 favicon, Open Graph image, confirmation and in-place feed scripts
 import                    interactive bulk importer (Node, no dependencies)
 docker-compose.yml
@@ -312,8 +318,12 @@ docker-compose.yml
 make test
 # or individually
 cd backend && go test ./...
-cd frontend && npm run check && npm run build
+cd frontend && npm test && npm run check && npm run test:integration
 ```
+
+The frontend integration suite builds and starts the SSR server against a local
+fake backend. It checks administrative URL aliases, signed sessions, cross-site
+requests, read-only mode and the rendered activity feed without using GitHub or MongoDB.
 
 Mongo-backed store tests are opt-in:
 
@@ -329,7 +339,7 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
 - **Private repositories are not supported.** A `GITHUB_TOKEN` can raise the rate limit, but repositories whose visibility is not public are rejected and never shown.
 - Only the repository owner/org and top contributors (up to 100, used for search) are stored; there is no full collaborator or permission model.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
-- The feed is built from cached snapshots: one push timestamp per repository, the latest pull request per repository, and cached open issues per repository. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
+- The feed is built from cached snapshots: attributed pushes from the latest 100 repository activity records, all cached pull requests, and cached open issues. Merge actors are available only when their matching activity is still in that window; other unknown actors remain unattributed. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
 - The issues page (`/issues`) lists open and closed issues across tracked repositories. Tags are ordered by frequency and can be combined. Each section shows ten items before “Show more”; the cache holds up to 100 open and 100 closed issues per repository.
 - The pull request page (`/pulls`) lists open and closed/merged pull requests across tracked repositories, with the same ten-item sections. The cache holds up to 100 pull requests per repository.
 - Issue lists on repository pages show cached open issues; the “open items” metric is GitHub's count and includes pull requests.

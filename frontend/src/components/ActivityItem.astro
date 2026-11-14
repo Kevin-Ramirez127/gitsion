@@ -25,7 +25,7 @@ function tone(value: Activity): string {
 
 <li class="feed-item">
   <span class="feed-avatar-wrap">
-    <img
+    {activity.actor ? <img
       class="feed-avatar"
       src={activity.actor.avatarUrl}
       alt=""
@@ -33,7 +33,11 @@ function tone(value: Activity): string {
       height="34"
       loading="lazy"
       decoding="async"
-    />
+    /> : (
+      <span class="feed-avatar feed-avatar-placeholder" aria-hidden="true">
+        <Icon name={icons[activity.kind]} size={18} />
+      </span>
+    )}
     <span class:list={['feed-kind', `is-${tone(activity)}`]}>
       <Icon name={icons[activity.kind]} size={10} strokeWidth={2.4} />
     </span>
@@ -41,9 +45,9 @@ function tone(value: Activity): string {
 
   <div class="feed-body">
     <p class="feed-line">
-      <a class="feed-actor" href={activity.actor.htmlUrl} target="_blank" rel="noreferrer noopener">
+      {activity.actor && <a class="feed-actor" href={activity.actor.htmlUrl} target="_blank" rel="noreferrer noopener">
         {activity.actor.login}
-      </a>
+      </a>}
       <span class="feed-action">{activityActionLabel(activity)}</span>
       <a class="feed-title" href={activity.url} target="_blank" rel="noreferrer noopener">
         {activity.title}

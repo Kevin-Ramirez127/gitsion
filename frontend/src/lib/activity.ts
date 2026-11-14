@@ -1,5 +1,6 @@
 import type { Issue, PullRequest, Push, Repository, User } from './types';
 import { repositoryPath } from './format.ts';
+import { repositoryPullRequests } from './collections.ts';
 
 /** How many activities the dashboard shows before offering the full feed. */
 export const FEED_PAGE_SIZE = 100;
@@ -14,7 +15,8 @@ export interface Activity {
   kind: ActivityKind;
   action: ActivityAction;
   timestamp: string;
-  actor: User;
+  /** Only set when the actor of this action is known, not its original author. */
+  actor?: User;
   title: string;
   /** GitHub URL for the underlying push, pull request or issue. */
   url: string;
@@ -29,8 +31,8 @@ export interface Activity {
 export interface ActivityGroup {
   key: string;
   label: string;
-  href: string;
-  avatarUrl: string;
+  href?: string;
+  avatarUrl?: string;
   latest: string;
   activities: Activity[];
 }
@@ -54,7 +56,9 @@ function pullActivity(repo: Repository, pr: PullRequest): Activity | null {
   const updated = timestamp(pr.updatedAt);
   const created = timestamp(pr.createdAt);
   const merged = timestamp(pr.mergedAt);
-  const time = pr.state === 'merged' ? merged || updated : updated;
+  let time = updated || created;
+  if (pr.state === 'merged') time = merged || timestamp(pr.closedAt) || updated;
+  else if (pr.state === 'closed') time = timestamp(pr.closedAt) || updated;
   if (!time) return null;
 
   let action: ActivityAction;
@@ -62,18 +66,23 @@ function pullActivity(repo: Repository, pr: PullRequest): Activity | null {
     action = 'merged';
   } else if (pr.state === 'closed') {
     action = 'closed';
-  } else if (created && time - created <= OPENED_WINDOW_MS) {
+  } else if (created && time >= created && time - created <= OPENED_WINDOW_MS) {
     action = 'opened';
+    time = created;
   } else {
     action = 'updated';
   }
+
+  let actor: User | undefined;
+  if (action === 'merged' && pr.mergedBy?.login) actor = pr.mergedBy;
+  else if (action === 'opened') actor = pr.author;
 
   return {
     id: `pull:${repo.fullName}#${pr.number}`,
     kind: 'pull',
     action,
     timestamp: new Date(time).toISOString(),
-    actor: pr.author,
+    actor,
     title: pr.title,
     url: pr.htmlUrl,
     repo,
@@ -85,18 +94,19 @@ function pullActivity(repo: Repository, pr: PullRequest): Activity | null {
 function issueActivity(repo: Repository, issue: Issue): Activity | null {
   const created = timestamp(issue.createdAt);
   const updated = timestamp(issue.updatedAt);
-  const time = updated || created;
+  let time = updated || created;
   if (!time) return null;
 
   const action: ActivityAction =
-    created && time - created <= OPENED_WINDOW_MS ? 'opened' : 'updated';
+    created && time >= created && time - created <= OPENED_WINDOW_MS ? 'opened' : 'updated';
+  if (action === 'opened') time = created;
 
   return {
     id: `issue:${repo.fullName}#${issue.number}`,
     kind: 'issue',
     action,
     timestamp: new Date(time).toISOString(),
-    actor: issue.author,
+    actor: action === 'opened' ? issue.author : undefined,
     title: issue.title,
     url: issue.htmlUrl,
     repo,
@@ -142,8 +152,8 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
       if (activity) activities.push(activity);
     }
 
-    if (repo.latestPr) {
-      const pull = pullActivity(repo, repo.latestPr);
+    for (const pr of repositoryPullRequests(repo)) {
+      const pull = pullActivity(repo, pr);
       if (pull) activities.push(pull);
     }
 
@@ -177,28 +187,36 @@ export function groupActivities(
     const key =
       view === 'project'
         ? `project:${activity.repo.fullName}`
-        : `user:${activity.actor.login.toLowerCase()}`;
+        : activity.actor ? `user:${activity.actor.login.toLowerCase()}` : 'unattributed';
 
     let group = groups.get(key);
     if (!group) {
-      group =
-        view === 'project'
-          ? {
-              key,
-              label: activity.repo.fullName,
-              href: repositoryPath(activity.repo.owner.login, activity.repo.name),
-              avatarUrl: activity.repo.owner.avatarUrl,
-              latest: activity.timestamp,
-              activities: [],
-            }
-          : {
-              key,
-              label: activity.actor.login,
-              href: activity.actor.htmlUrl,
-              avatarUrl: activity.actor.avatarUrl,
-              latest: activity.timestamp,
-              activities: [],
-            };
+      if (view === 'project') {
+        group = {
+          key,
+          label: activity.repo.fullName,
+          href: repositoryPath(activity.repo.owner.login, activity.repo.name),
+          avatarUrl: activity.repo.owner.avatarUrl,
+          latest: activity.timestamp,
+          activities: [],
+        };
+      } else if (activity.actor) {
+        group = {
+          key,
+          label: activity.actor.login,
+          href: activity.actor.htmlUrl,
+          avatarUrl: activity.actor.avatarUrl,
+          latest: activity.timestamp,
+          activities: [],
+        };
+      } else {
+        group = {
+          key,
+          label: 'Other activity',
+          latest: activity.timestamp,
+          activities: [],
+        };
+      }
       groups.set(key, group);
     }
     group.activities.push(activity);
@@ -213,8 +231,8 @@ export function activityActionLabel(activity: Activity): string {
     case 'push':
       return activity.forced ? 'force-pushed to' : 'pushed to';
     case 'pull':
-      return `${activity.action} pull request`;
+      return activity.actor ? `${activity.action} pull request` : `Pull request ${activity.action}`;
     case 'issue':
-      return `${activity.action} issue`;
+      return activity.actor ? `${activity.action} issue` : `Issue ${activity.action}`;
   }
 }

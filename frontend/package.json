@@ -12,6 +12,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "test:integration": "astro build && node --experimental-strip-types --test test/integration/*.test.mjs",
     "start": "node ./dist/server/entry.mjs"
   },
   "dependencies": {

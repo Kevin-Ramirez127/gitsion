@@ -1,8 +1,8 @@
-import type { APIRoute } from 'astro';
+import { requireAdminMutation } from '../../lib/admin';
 import { errorMessage, trackRepository } from '../../lib/backend';
 import { repositoryPath } from '../../lib/format';
 
-export const POST: APIRoute = async ({ request, redirect }) => {
+export const POST = requireAdminMutation(async ({ request, redirect }) => {
   let repository = '';
   try {
     const form = await request.formData();
@@ -29,4 +29,4 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       303,
     );
   }
-};
+});

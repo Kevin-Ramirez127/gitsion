@@ -92,7 +92,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		tags         []model.Tag
 		issues       []model.Issue
 		contributors []model.User
-		pushes       []model.Push
+		activities   []ghActivity
 	)
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -117,13 +117,14 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		return err
 	})
 	group.Go(func() (err error) {
-		pushes, err = c.fetchPushes(ctx, owner, name)
+		activities, err = c.fetchRepositoryActivity(ctx, owner, name)
 		return err
 	})
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}
 
+	attributeMerges(prs, activities)
 	repo.PullRequests = prs
 	if len(prs) > 0 {
 		latest := prs[0]
@@ -132,7 +133,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 	repo.Tags = tags
 	repo.Issues = issues
 	repo.Contributors = contributors
-	repo.Pushes = pushes
+	repo.Pushes = pushesFromActivities(activities)
 	repo.SyncError = ""
 	return repo, nil
 }
@@ -183,18 +184,19 @@ func (c *Client) fetchPullRequests(ctx context.Context, owner, name string) ([]m
 			state = "merged"
 		}
 		prs = append(prs, model.PullRequest{
-			Number:    raw.Number,
-			Title:     raw.Title,
-			State:     state,
-			Draft:     raw.Draft,
-			Author:    raw.User.toModel(),
-			HTMLURL:   raw.HTMLURL,
-			HeadRef:   raw.Head.Ref,
-			BaseRef:   raw.Base.Ref,
-			CreatedAt: raw.CreatedAt,
-			UpdatedAt: raw.UpdatedAt,
-			MergedAt:  raw.MergedAt,
-			ClosedAt:  raw.ClosedAt,
+			Number:         raw.Number,
+			Title:          raw.Title,
+			State:          state,
+			Draft:          raw.Draft,
+			Author:         raw.User.toModel(),
+			HTMLURL:        raw.HTMLURL,
+			HeadRef:        raw.Head.Ref,
+			BaseRef:        raw.Base.Ref,
+			CreatedAt:      raw.CreatedAt,
+			UpdatedAt:      raw.UpdatedAt,
+			MergedAt:       raw.MergedAt,
+			ClosedAt:       raw.ClosedAt,
+			MergeCommitSHA: raw.MergeCommitSHA,
 		})
 	}
 	return prs, nil
@@ -243,44 +245,51 @@ func (c *Client) fetchIssues(ctx context.Context, owner, name string) ([]model.I
 }
 
 func (c *Client) fetchIssueState(ctx context.Context, owner, name, state string) ([]model.Issue, error) {
-	var raws []ghIssue
-	path := fmt.Sprintf(
-		"%s/issues?state=%s&sort=updated&direction=desc&per_page=%d",
-		repoPath(owner, name),
-		url.QueryEscape(state),
-		maxIssuesPerState,
-	)
-	if err := c.get(ctx, path, &raws); err != nil {
-		return nil, err
-	}
-	issues := make([]model.Issue, 0, len(raws))
-	for _, raw := range raws {
-		if raw.PullRequest != nil {
-			continue // the issues endpoint also returns pull requests
+	issues := make([]model.Issue, 0, maxIssuesPerState)
+	seen := make(map[int]bool)
+	for page := 1; len(issues) < maxIssuesPerState; page++ {
+		var raws []ghIssue
+		path := fmt.Sprintf(
+			"%s/issues?state=%s&sort=updated&direction=desc&per_page=%d&page=%d",
+			repoPath(owner, name), url.QueryEscape(state), maxIssuesPerState, page,
+		)
+		if err := c.get(ctx, path, &raws); err != nil {
+			return nil, err
 		}
-		if len(issues) == maxIssuesPerState {
+		for _, raw := range raws {
+			// Pull requests do not consume the issue budget. Deduplicate issues
+			// that move between pages while GitHub's updated ordering changes.
+			if raw.PullRequest != nil || seen[raw.Number] {
+				continue
+			}
+			seen[raw.Number] = true
+			labels := make([]string, 0, len(raw.Labels))
+			for _, label := range raw.Labels {
+				labels = append(labels, label.Name)
+			}
+			issueState := raw.State
+			if issueState == "" {
+				issueState = state
+			}
+			issues = append(issues, model.Issue{
+				Number:    raw.Number,
+				Title:     raw.Title,
+				State:     issueState,
+				Author:    raw.User.toModel(),
+				Labels:    labels,
+				Comments:  raw.Comments,
+				HTMLURL:   raw.HTMLURL,
+				CreatedAt: raw.CreatedAt,
+				UpdatedAt: raw.UpdatedAt,
+				ClosedAt:  raw.ClosedAt,
+			})
+			if len(issues) == maxIssuesPerState {
+				break
+			}
+		}
+		if len(raws) < maxIssuesPerState {
 			break
 		}
-		labels := make([]string, 0, len(raw.Labels))
-		for _, label := range raw.Labels {
-			labels = append(labels, label.Name)
-		}
-		issueState := raw.State
-		if issueState == "" {
-			issueState = state
-		}
-		issues = append(issues, model.Issue{
-			Number:    raw.Number,
-			Title:     raw.Title,
-			State:     issueState,
-			Author:    raw.User.toModel(),
-			Labels:    labels,
-			Comments:  raw.Comments,
-			HTMLURL:   raw.HTMLURL,
-			CreatedAt: raw.CreatedAt,
-			UpdatedAt: raw.UpdatedAt,
-			ClosedAt:  raw.ClosedAt,
-		})
 	}
 	return issues, nil
 }
@@ -301,12 +310,16 @@ func (c *Client) fetchContributors(ctx context.Context, owner, name string) ([]m
 	return contributors, nil
 }
 
-func (c *Client) fetchPushes(ctx context.Context, owner, name string) ([]model.Push, error) {
+func (c *Client) fetchRepositoryActivity(ctx context.Context, owner, name string) ([]ghActivity, error) {
 	var raws []ghActivity
 	path := fmt.Sprintf("%s/activity?per_page=%d&direction=desc", repoPath(owner, name), maxActivity)
 	if err := c.get(ctx, path, &raws); err != nil {
 		return nil, err
 	}
+	return raws, nil
+}
+
+func pushesFromActivities(raws []ghActivity) []model.Push {
 	pushes := make([]model.Push, 0, len(raws))
 	for _, raw := range raws {
 		if raw.ActivityType != "push" && raw.ActivityType != "force_push" {
@@ -328,7 +341,27 @@ func (c *Client) fetchPushes(ctx context.Context, owner, name string) ([]model.P
 			Forced:    raw.ActivityType == "force_push",
 		})
 	}
-	return pushes, nil
+	return pushes
+}
+
+// Reuse repository activity to identify merge actors without a request per PR.
+// If the merge is outside the activity window, leave the actor unknown.
+func attributeMerges(prs []model.PullRequest, activities []ghActivity) {
+	for i := range prs {
+		pr := &prs[i]
+		if pr.MergedAt == nil || pr.MergeCommitSHA == "" || pr.BaseRef == "" {
+			continue
+		}
+		for _, activity := range activities {
+			if activity.ActivityType == "pr_merge" && activity.After == pr.MergeCommitSHA &&
+				activity.Ref == "refs/heads/"+pr.BaseRef && activity.Timestamp.Equal(*pr.MergedAt) &&
+				activity.Actor != nil && activity.Actor.Login != "" {
+				actor := activity.Actor.toModel()
+				pr.MergedBy = &actor
+				break
+			}
+		}
+	}
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
@@ -466,10 +499,11 @@ type ghPullRequest struct {
 	Base struct {
 		Ref string `json:"ref"`
 	} `json:"base"`
-	CreatedAt time.Time  `json:"created_at"`
-	UpdatedAt time.Time  `json:"updated_at"`
-	MergedAt  *time.Time `json:"merged_at"`
-	ClosedAt  *time.Time `json:"closed_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	MergedAt       *time.Time `json:"merged_at"`
+	ClosedAt       *time.Time `json:"closed_at"`
+	MergeCommitSHA string     `json:"merge_commit_sha"`
 }
 
 type ghTag struct {

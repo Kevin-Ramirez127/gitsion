@@ -77,15 +77,16 @@ export function collectIssues(repos: Repository[]): IssueEntry[] {
 }
 
 export function collectPullRequests(repos: Repository[]): PullRequestEntry[] {
-  return repos.flatMap((repo) => {
-    const prs =
-      repo.pullRequests && repo.pullRequests.length > 0
-        ? repo.pullRequests
-        : repo.latestPr
-          ? [repo.latestPr]
-          : [];
-    return prs.map((pr) => ({ pr, repo }));
-  });
+  return repos.flatMap((repo) => repositoryPullRequests(repo).map((pr) => ({ pr, repo })));
+}
+
+/** Use all cached PRs, with a fallback for snapshots from older backends. */
+export function repositoryPullRequests(repo: Repository): PullRequest[] {
+  return repo.pullRequests?.length ? repo.pullRequests : repo.latestPr ? [repo.latestPr] : [];
+}
+
+export function hasOpenPullRequest(repo: Repository): boolean {
+  return repositoryPullRequests(repo).some((pr) => pr.state === 'open' && !pr.draft);
 }
 
 /** Counts issue tags across every issue, ordered by frequency then name. */

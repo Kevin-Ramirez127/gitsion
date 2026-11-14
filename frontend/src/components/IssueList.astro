@@ -41,12 +41,13 @@ const {
               </a>
             )}
             <span title={absoluteTime(issue.createdAt)}>
-              {issue.state === 'closed' && issue.closedAt
-                ? `closed ${relativeTime(issue.closedAt)}`
-                : `opened ${relativeTime(issue.createdAt)}`}
+              opened {relativeTime(issue.createdAt)}
               {' by '}
               {issue.author.login}
             </span>
+            {issue.state === 'closed' && issue.closedAt && (
+              <span title={absoluteTime(issue.closedAt)}>closed {relativeTime(issue.closedAt)}</span>
+            )}
             {issue.comments > 0 && <span>{issue.comments} comments</span>}
           </div>
           {issue.labels.length > 0 && (

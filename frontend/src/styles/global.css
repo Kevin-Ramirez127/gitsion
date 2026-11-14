@@ -1125,6 +1125,12 @@ details[open] > summary .filter-toggle::after {
   color: var(--on-strong);
 }
 
+.feed-avatar-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+}
+
 .feed-kind.is-push,
 .feed-kind.is-pull {
   background: var(--text);

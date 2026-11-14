@@ -125,3 +125,73 @@ test('push history coexists with issues and pull requests in chronological order
   })]);
   assert.deepEqual(activities.map(activity => activity.kind), ['pull', 'issue', 'push']);
 });
+
+function pull(overrides = {}) {
+  return {
+    number: 1, title: 'PR', state: 'open', draft: false,
+    author: contributor, htmlUrl: '/pull/1',
+    createdAt: '2026-02-01T10:00:00Z', updatedAt: '2026-02-03T10:00:00Z',
+    ...overrides,
+  };
+}
+
+test('a merged PR is attributed to the merger, independently of its author', () => {
+  const [activity] = buildActivityFeed([repo({ latestPr: pull({
+    state: 'merged', mergedBy: owner, mergedAt: '2026-02-02T10:00:00Z',
+  }) })]);
+  assert.equal(activity.actor.login, owner.login);
+  assert.equal(activity.timestamp, '2026-02-02T10:00:00.000Z');
+  assert.equal(activityActionLabel(activity), 'merged pull request');
+  assert.equal(groupActivities([activity], 'user')[0].label, owner.login);
+});
+
+test('unknown merge, close and update actors never fall back to the author', () => {
+  for (const state of ['merged', 'closed', 'open']) {
+    const [activity] = buildActivityFeed([repo({ latestPr: pull({
+      state, mergedAt: state === 'merged' ? '2026-02-02T10:00:00Z' : null,
+      closedAt: state === 'closed' ? '2026-02-02T10:00:00Z' : null,
+    }) })]);
+    const action = state === 'open' ? 'updated' : state;
+    assert.equal(activity.actor, undefined);
+    assert.equal(activityActionLabel(activity), `Pull request ${action}`);
+    const [group] = groupActivities([activity], 'user');
+    assert.equal(group.label, 'Other activity');
+    assert.equal(group.href, undefined);
+    assert.equal(group.avatarUrl, undefined);
+    if (state === 'closed') assert.equal(activity.timestamp, '2026-02-02T10:00:00.000Z');
+  }
+});
+
+test('issue updates remain visible without guessing who made the update', () => {
+  const [activity] = buildActivityFeed([repo({ issues: [{
+    number: 2, title: 'Issue', state: 'open', author: contributor,
+    htmlUrl: '/issues/2', labels: ['bug'],
+    createdAt: '2026-02-01T10:00:00Z', updatedAt: '2026-02-03T10:00:00Z',
+  }] })]);
+  assert.equal(activity.actor, undefined);
+  assert.equal(activityActionLabel(activity), 'Issue updated');
+  assert.deepEqual(activity.labels, ['bug']);
+});
+
+test('new issues and PRs use the known creation actor and creation time', () => {
+  const created = '2026-02-01T10:00:00Z';
+  const updated = '2026-02-01T10:00:02Z';
+  const activities = buildActivityFeed([repo({
+    latestPr: pull({ createdAt: created, updatedAt: updated }),
+    issues: [{ number: 2, title: 'Issue', author: owner, htmlUrl: '/issues/2',
+      createdAt: created, updatedAt: updated }],
+  })]);
+  for (const activity of activities) {
+    assert.equal(activity.action, 'opened');
+    assert.equal(activity.timestamp, '2026-02-01T10:00:00.000Z');
+    assert.ok(activity.actor);
+  }
+});
+
+test('the feed includes older cached PRs even when latestPr is merged', () => {
+  const latest = pull({ number: 2, state: 'merged', mergedAt: '2026-02-03T10:00:00Z' });
+  const older = pull({ number: 1, updatedAt: '2026-02-02T10:00:00Z' });
+  const activities = buildActivityFeed([repo({ latestPr: latest, pullRequests: [latest, older] })]);
+  assert.deepEqual(activities.map(a => a.number), [2, 1]);
+  assert.equal(new Set(activities.map(a => a.id)).size, 2);
+});
