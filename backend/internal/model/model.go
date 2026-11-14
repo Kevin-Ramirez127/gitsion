@@ -25,18 +25,20 @@ type Owner struct {
 
 // PullRequest is a cached pull request of a repository.
 type PullRequest struct {
-	Number    int        `bson:"number" json:"number"`
-	Title     string     `bson:"title" json:"title"`
-	State     string     `bson:"state" json:"state"` // open, merged or closed
-	Draft     bool       `bson:"draft" json:"draft"`
-	Author    User       `bson:"author" json:"author"`
-	HTMLURL   string     `bson:"html_url" json:"htmlUrl"`
-	HeadRef   string     `bson:"head_ref,omitempty" json:"headRef,omitempty"`
-	BaseRef   string     `bson:"base_ref,omitempty" json:"baseRef,omitempty"`
-	CreatedAt time.Time  `bson:"created_at" json:"createdAt"`
-	UpdatedAt time.Time  `bson:"updated_at" json:"updatedAt"`
-	MergedAt  *time.Time `bson:"merged_at,omitempty" json:"mergedAt,omitempty"`
-	ClosedAt  *time.Time `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
+	Number         int        `bson:"number" json:"number"`
+	Title          string     `bson:"title" json:"title"`
+	State          string     `bson:"state" json:"state"` // open, merged or closed
+	Draft          bool       `bson:"draft" json:"draft"`
+	Author         User       `bson:"author" json:"author"`
+	HTMLURL        string     `bson:"html_url" json:"htmlUrl"`
+	HeadRef        string     `bson:"head_ref,omitempty" json:"headRef,omitempty"`
+	BaseRef        string     `bson:"base_ref,omitempty" json:"baseRef,omitempty"`
+	CreatedAt      time.Time  `bson:"created_at" json:"createdAt"`
+	UpdatedAt      time.Time  `bson:"updated_at" json:"updatedAt"`
+	MergedAt       *time.Time `bson:"merged_at,omitempty" json:"mergedAt,omitempty"`
+	ClosedAt       *time.Time `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
+	MergeCommitSHA string     `bson:"merge_commit_sha,omitempty" json:"mergeCommitSha,omitempty"`
+	MergedBy       *User      `bson:"merged_by,omitempty" json:"mergedBy,omitempty"`
 }
 
 // Tag is a git tag. GitHub's tags endpoint does not expose tag dates, so we

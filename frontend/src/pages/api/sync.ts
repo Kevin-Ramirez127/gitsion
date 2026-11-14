@@ -1,7 +1,7 @@
-import type { APIRoute } from 'astro';
+import { requireAdminMutation } from '../../lib/admin';
 import { errorMessage, syncAll } from '../../lib/backend';
 
-export const POST: APIRoute = async ({ redirect }) => {
+export const POST = requireAdminMutation(async ({ redirect }) => {
   try {
     await syncAll();
     return redirect(
@@ -14,4 +14,4 @@ export const POST: APIRoute = async ({ redirect }) => {
       303,
     );
   }
-};
+});

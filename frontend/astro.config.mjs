@@ -102,7 +102,7 @@ export default defineConfig({
     port: 4321,
   },
   // Astro's built-in origin check sees the internal Host header behind a TLS
-  // proxy. The middleware checks Fetch Metadata instead and enforces the admin
+  // proxy. Each mutation handler checks Fetch Metadata and enforces the admin
   // session on every mutation.
   security: {
     checkOrigin: false,

@@ -1,10 +1,10 @@
-import type { APIRoute } from 'astro';
+import { requireAdminMutation } from '../../lib/admin';
 import { errorMessage, refreshRepository } from '../../lib/backend';
 import { repositoryPath } from '../../lib/format';
 
 const validPart = /^[A-Za-z0-9_.-]+$/;
 
-export const POST: APIRoute = async ({ request, redirect }) => {
+export const POST = requireAdminMutation(async ({ request, redirect }) => {
   let owner = '';
   let name = '';
   try {
@@ -37,4 +37,4 @@ export const POST: APIRoute = async ({ request, redirect }) => {
       303,
     );
   }
-};
+});

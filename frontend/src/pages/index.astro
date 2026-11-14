@@ -8,7 +8,7 @@ import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
 import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
-import { isOpenIssue } from '../lib/collections';
+import { hasOpenPullRequest, isOpenIssue } from '../lib/collections';
 import { getHeroCopy, getSiteConfig } from '../lib/config';
 import { plainNumber, relativeTime } from '../lib/format';
 import type { OwnerSummary, Repository } from '../lib/types';
@@ -67,9 +67,7 @@ const totalIssues = searchedRepos.reduce(
   (total, repo) => total + repo.issues.filter(isOpenIssue).length,
   0,
 );
-const openLatestPrs = searchedRepos.filter(
-  (repo) => repo.latestPr?.state === 'open' && !repo.latestPr.draft,
-).length;
+const reposWithOpenPr = searchedRepos.filter(hasOpenPullRequest).length;
 const lastSync = searchedRepos.reduce<string>((latest, repo) => {
   if (!repo.lastSyncedAt) return latest;
   if (!latest) return repo.lastSyncedAt;
@@ -294,7 +292,7 @@ function labelHref(label: string): string {
     />
     <StatCard
       label="Repos with open PR"
-      value={plainNumber(openLatestPrs)}
+      value={plainNumber(reposWithOpenPr)}
       hint="with an active pull request"
       icon="pull"
       href="/pulls"

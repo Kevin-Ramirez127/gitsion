@@ -1,5 +1,6 @@
 ---
 import ActivityItem from './ActivityItem.astro';
+import Icon from './Icon.astro';
 import { groupActivities, type Activity, type FeedView } from '../lib/activity';
 import { relativeTime } from '../lib/format';
 
@@ -38,7 +39,7 @@ const groups = groupActivities(activities, view).map((group) => {
     <section class="feed-group" aria-labelledby={`feed-group-${index}`}>
       <header class="feed-group-head">
         <div class="feed-group-id">
-          <img
+          {group.avatarUrl ? <img
             class="feed-group-avatar"
             src={group.avatarUrl}
             alt=""
@@ -46,8 +47,12 @@ const groups = groupActivities(activities, view).map((group) => {
             height="28"
             loading="lazy"
             decoding="async"
-          />
-          <a
+          /> : (
+            <span class="feed-group-avatar feed-avatar-placeholder" aria-hidden="true">
+              <Icon name="clock" size={16} />
+            </span>
+          )}
+          {group.href ? <a
             class="feed-group-name"
             id={`feed-group-${index}`}
             href={group.href}
@@ -55,7 +60,7 @@ const groups = groupActivities(activities, view).map((group) => {
             rel={view === 'user' ? 'noreferrer noopener' : undefined}
           >
             {group.label}
-          </a>
+          </a> : <span class="feed-group-name" id={`feed-group-${index}`}>{group.label}</span>}
         </div>
         <span class="feed-group-meta">
           {group.activities.length} {group.activities.length === 1 ? 'activity' : 'activities'}

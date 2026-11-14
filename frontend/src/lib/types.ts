@@ -23,6 +23,8 @@ export interface PullRequest {
   createdAt: string;
   updatedAt: string;
   mergedAt?: string | null;
+  mergeCommitSha?: string;
+  mergedBy?: User | null;
   closedAt?: string | null;
 }
 
