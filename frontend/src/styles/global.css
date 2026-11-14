@@ -847,7 +847,6 @@ details[open] > summary .filter-toggle::after {
   height: 16px;
   border: 1px solid currentColor;
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .chip-count {
@@ -1057,7 +1056,6 @@ details[open] > summary .filter-toggle::after {
   flex: none;
   border: 1px solid var(--border);
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .feed-group-name {
@@ -1112,7 +1110,6 @@ details[open] > summary .filter-toggle::after {
   height: 40px;
   border: 1px solid var(--border);
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .feed-kind {
@@ -1342,7 +1339,6 @@ details[open] > summary .filter-toggle::after {
   flex: none;
   border: 1px solid var(--border);
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .repo-head-text {
@@ -1735,7 +1731,6 @@ a.pr-mini:hover {
   border: 1px solid var(--border);
   border-radius: 0;
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .repo-heading {
@@ -1906,7 +1901,6 @@ a.pr-mini:hover {
   border: 1px solid var(--border);
   border-radius: 0;
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .pr-author strong {
@@ -2203,7 +2197,6 @@ a.pr-mini:hover {
   border: 1px solid var(--border);
   border-radius: 0;
   background: var(--panel-2);
-  filter: grayscale(1);
 }
 
 .owner-info {
