@@ -60,6 +60,17 @@ type Issue struct {
 	ClosedAt  *time.Time `bson:"closed_at,omitempty" json:"closedAt,omitempty"`
 }
 
+// Push is an attributed repository activity, not a commit-author guess.
+type Push struct {
+	ID        int64     `bson:"id" json:"id"`
+	Actor     User      `bson:"actor" json:"actor"`
+	Ref       string    `bson:"ref" json:"ref"`
+	Before    string    `bson:"before" json:"before"`
+	After     string    `bson:"after" json:"after"`
+	Timestamp time.Time `bson:"timestamp" json:"timestamp"`
+	Forced    bool      `bson:"forced" json:"forced"`
+}
+
 // Repository is both the tracked-repository record and the cached GitHub
 // snapshot. Snapshots are embedded and capped so a dashboard read is a single
 // Mongo lookup.
@@ -84,6 +95,7 @@ type Repository struct {
 	PullRequests []PullRequest `bson:"pull_requests" json:"pullRequests"`
 	Tags         []Tag         `bson:"tags" json:"tags"`
 	Issues       []Issue       `bson:"issues" json:"issues"`
+	Pushes       []Push        `bson:"pushes" json:"pushes"`
 
 	// Contributors are the top contributors returned by GitHub, capped so the
 	// snapshot stays small. They power repository search.

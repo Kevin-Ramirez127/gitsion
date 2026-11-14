@@ -33,8 +33,9 @@ build: ## Build backend and frontend locally
 	cd backend && go build ./...
 	cd frontend && npm run build
 
-test: ## Run backend tests and frontend type checks
+test: ## Run backend and frontend tests, then frontend type checks
 	cd backend && go test ./...
+	cd frontend && npm test
 	cd frontend && npm run check
 
 integration-test: ## Run MongoDB-backed store tests (MONGODB_TEST_URI required)

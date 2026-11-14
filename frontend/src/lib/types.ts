@@ -44,6 +44,16 @@ export interface Issue {
   closedAt?: string | null;
 }
 
+export interface Push {
+  id: number;
+  actor: User;
+  ref: string;
+  before: string;
+  after: string;
+  timestamp: string;
+  forced: boolean;
+}
+
 export interface Repository {
   fullName: string;
   name: string;
@@ -58,6 +68,8 @@ export interface Repository {
   forks: number;
   openItems: number;
   pushedAt: string;
+  /** Older snapshots have no attributed push history until their next sync. */
+  pushes?: Push[];
   latestPr: PullRequest | null;
   pullRequests?: PullRequest[];
   tags: Tag[];

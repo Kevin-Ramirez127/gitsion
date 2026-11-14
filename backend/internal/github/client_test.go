@@ -116,6 +116,34 @@ func TestFetchSnapshot(t *testing.T) {
 			{"login": "", "type": "Anonymous"}
 		]`))
 	})
+	mux.HandleFunc("/repos/acme/widget/activity", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("per_page"); got != "100" {
+			t.Errorf("activity per_page = %q, want 100", got)
+		}
+		if got := r.URL.Query().Get("direction"); got != "desc" {
+			t.Errorf("activity direction = %q, want desc", got)
+		}
+		_, _ = w.Write([]byte(`[
+			{
+				"id": 102,
+				"actor": {"login":"octocat","avatar_url":"https://avatars.example/octocat","html_url":"https://github.com/octocat"},
+				"activity_type": "force_push",
+				"ref": "refs/heads/release",
+				"before": "3333333333333333333333333333333333333333",
+				"after": "4444444444444444444444444444444444444444",
+				"timestamp": "2026-02-03T10:00:00Z"
+			},
+			{
+				"id": 101,
+				"actor": {"login":"bob","avatar_url":"https://avatars.example/bob","html_url":"https://github.com/bob"},
+				"activity_type": "push",
+				"ref": "refs/heads/feature/attribution",
+				"before": "1111111111111111111111111111111111111111",
+				"after": "2222222222222222222222222222222222222222",
+				"timestamp": "2026-02-02T10:00:00Z"
+			}
+		]`))
+	})
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -165,6 +193,21 @@ func TestFetchSnapshot(t *testing.T) {
 	if len(repo.Contributors) != 2 || repo.Contributors[0].Login != "octocat" {
 		t.Errorf("contributors = %+v, want anonymous entry skipped", repo.Contributors)
 	}
+	if len(repo.Pushes) != 2 {
+		t.Fatalf("pushes = %+v, want two distinct push activities", repo.Pushes)
+	}
+	if repo.Pushes[0].ID != 102 || repo.Pushes[0].Actor.Login != "octocat" || !repo.Pushes[0].Forced {
+		t.Errorf("force push = %+v", repo.Pushes[0])
+	}
+	push := repo.Pushes[1]
+	if push.Actor.Login != "bob" || push.Ref != "refs/heads/feature/attribution" || push.Forced {
+		t.Errorf("push actor/ref = %+v; must not use the owner or default branch", push)
+	}
+	if push.Timestamp.Format(time.RFC3339) != "2026-02-02T10:00:00Z" ||
+		push.Before != "1111111111111111111111111111111111111111" ||
+		push.After != "2222222222222222222222222222222222222222" {
+		t.Errorf("push time/commits = %+v", push)
+	}
 }
 
 func TestFetchSnapshotEmptyCollections(t *testing.T) {
@@ -176,6 +219,7 @@ func TestFetchSnapshotEmptyCollections(t *testing.T) {
 	mux.HandleFunc("/repos/acme/empty/tags", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 	mux.HandleFunc("/repos/acme/empty/issues", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 	mux.HandleFunc("/repos/acme/empty/contributors", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	mux.HandleFunc("/repos/acme/empty/activity", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -188,8 +232,43 @@ func TestFetchSnapshotEmptyCollections(t *testing.T) {
 		t.Error("LatestPR should be nil")
 	}
 	if repo.Tags == nil || repo.Issues == nil || repo.PullRequests == nil ||
-		repo.Topics == nil || repo.Contributors == nil {
+		repo.Topics == nil || repo.Contributors == nil || repo.Pushes == nil {
 		t.Error("collections should be empty slices, not nil")
+	}
+}
+
+func TestFetchPushesSkipsUnattributedAndNonPushActivities(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[
+			{"id":1,"actor":{"login":"owner"},"activity_type":"pr_merge","ref":"refs/heads/main","after":"abc","timestamp":"2026-02-01T10:00:00Z"},
+			{"id":2,"actor":null,"activity_type":"push","ref":"refs/heads/main","after":"abc","timestamp":"2026-02-01T10:00:00Z"},
+			{"id":3,"actor":{},"activity_type":"push","ref":"refs/heads/main","after":"abc","timestamp":"2026-02-01T10:00:00Z"},
+			{"id":4,"actor":{"login":"alice"},"activity_type":"push","ref":"refs/heads/main","after":"abc"},
+			{"id":5,"actor":{"login":"alice"},"activity_type":"push","after":"abc","timestamp":"2026-02-01T10:00:00Z"},
+			{"id":6,"actor":{"login":"alice"},"activity_type":"push","ref":"refs/heads/main","after":"000000","timestamp":"2026-02-01T10:00:00Z"},
+			{"id":7,"actor":{"login":"alice"},"activity_type":"push","ref":"refs/heads/main","after":"abc","timestamp":"2026-02-01T10:00:00Z"}
+		]`))
+	}))
+	defer server.Close()
+	pushes, err := NewClient(server.URL, "").fetchPushes(context.Background(), "acme", "widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pushes) != 1 || pushes[0].ID != 7 || pushes[0].Actor.Login != "alice" {
+		t.Fatalf("pushes = %+v, want only the attributed complete push", pushes)
+	}
+}
+
+func TestFetchPushesPropagatesAPIFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"message":"activity unavailable"}`))
+	}))
+	defer server.Close()
+	_, err := NewClient(server.URL, "").fetchPushes(context.Background(), "acme", "widget")
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusBadGateway {
+		t.Fatalf("error = %v, want APIError 502", err)
 	}
 }
 

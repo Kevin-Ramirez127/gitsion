@@ -103,6 +103,23 @@ func TestTrackErrors(t *testing.T) {
 	}
 }
 
+func TestGetLegacySnapshotHasNoAttributedPushes(t *testing.T) {
+	st := newFakeStore()
+	if err := st.Create(context.Background(), &model.Repository{
+		FullName: "acme/legacy", Name: "legacy", Visibility: "public",
+		Owner: model.Owner{Login: "acme"}, PushedAt: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := newTestTracker(st, newFakeGitHub()).Get(context.Background(), "acme", "legacy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.Pushes == nil || len(repo.Pushes) != 0 {
+		t.Fatalf("legacy pushes = %+v, want an empty array until the next sync", repo.Pushes)
+	}
+}
+
 func TestTrackRejectsPrivateRepositories(t *testing.T) {
 	st := newFakeStore()
 	gh := newFakeGitHub()
@@ -414,5 +431,6 @@ func cloneRepo(repo *model.Repository) *model.Repository {
 	clone.Tags = append([]model.Tag(nil), repo.Tags...)
 	clone.Issues = append([]model.Issue(nil), repo.Issues...)
 	clone.PullRequests = append([]model.PullRequest(nil), repo.PullRequests...)
+	clone.Pushes = append([]model.Push(nil), repo.Pushes...)
 	return &clone
 }
