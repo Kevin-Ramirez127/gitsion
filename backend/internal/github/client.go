@@ -33,6 +33,8 @@ const (
 	// maxContributors caps the contributor list stored per snapshot. GitHub
 	// returns them ordered by contribution count.
 	maxContributors = 100
+	// Keep recent push history bounded to the latest repository activity page.
+	maxActivity = 100
 )
 
 var (
@@ -82,7 +84,7 @@ func NewClient(baseURL, token string) *Client {
 }
 
 // FetchSnapshot retrieves repository metadata, pull requests, tags, issues and
-// top contributors in parallel.
+// top contributors and attributed push activities in parallel.
 func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.Repository, error) {
 	var (
 		repo         *model.Repository
@@ -90,6 +92,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		tags         []model.Tag
 		issues       []model.Issue
 		contributors []model.User
+		pushes       []model.Push
 	)
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -113,6 +116,10 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 		contributors, err = c.fetchContributors(ctx, owner, name)
 		return err
 	})
+	group.Go(func() (err error) {
+		pushes, err = c.fetchPushes(ctx, owner, name)
+		return err
+	})
 	if err := group.Wait(); err != nil {
 		return nil, err
 	}
@@ -125,6 +132,7 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 	repo.Tags = tags
 	repo.Issues = issues
 	repo.Contributors = contributors
+	repo.Pushes = pushes
 	repo.SyncError = ""
 	return repo, nil
 }
@@ -293,6 +301,36 @@ func (c *Client) fetchContributors(ctx context.Context, owner, name string) ([]m
 	return contributors, nil
 }
 
+func (c *Client) fetchPushes(ctx context.Context, owner, name string) ([]model.Push, error) {
+	var raws []ghActivity
+	path := fmt.Sprintf("%s/activity?per_page=%d&direction=desc", repoPath(owner, name), maxActivity)
+	if err := c.get(ctx, path, &raws); err != nil {
+		return nil, err
+	}
+	pushes := make([]model.Push, 0, len(raws))
+	for _, raw := range raws {
+		if raw.ActivityType != "push" && raw.ActivityType != "force_push" {
+			continue
+		}
+		// GitHub can return a null actor. Never substitute the repository owner.
+		if raw.Actor == nil || raw.Actor.Login == "" || raw.ID <= 0 ||
+			raw.Ref == "" || raw.Timestamp.IsZero() || raw.After == "" ||
+			strings.Trim(raw.After, "0") == "" {
+			continue
+		}
+		pushes = append(pushes, model.Push{
+			ID:        raw.ID,
+			Actor:     raw.Actor.toModel(),
+			Ref:       raw.Ref,
+			Before:    raw.Before,
+			After:     raw.After,
+			Timestamp: raw.Timestamp,
+			Forced:    raw.ActivityType == "force_push",
+		})
+	}
+	return pushes, nil
+}
+
 func (c *Client) get(ctx context.Context, path string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
@@ -439,6 +477,16 @@ type ghTag struct {
 	Commit struct {
 		SHA string `json:"sha"`
 	} `json:"commit"`
+}
+
+type ghActivity struct {
+	ID           int64     `json:"id"`
+	Actor        *ghUser   `json:"actor"`
+	Ref          string    `json:"ref"`
+	Before       string    `json:"before"`
+	After        string    `json:"after"`
+	Timestamp    time.Time `json:"timestamp"`
+	ActivityType string    `json:"activity_type"`
 }
 
 type ghIssue struct {

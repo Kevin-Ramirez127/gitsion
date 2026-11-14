@@ -21,6 +21,10 @@ limit. Private repositories are never tracked.
 - Public read-only dashboard with no viewer accounts; adding, removing, refreshing and syncing require an admin token and happen at `/admin`.
 - Private repositories are rejected, even when `GITHUB_TOKEN` can see them.
 - Activity feed of pushes, pull requests and issues across tracked repositories, newest-first inside each group, with actor avatars, labels, relative times and a show-all view.
+- Pushes use the actual actor, ref and timestamp from GitHub repository activity,
+  including force pushes. Each sync reads the latest 100 activity records.
+  Unattributed records are omitted; older snapshots gain push history on their
+  next successful sync.
 - Dedicated issues page with tag filters ordered by how often each tag appears, plus separate open and closed sections with ten-item pages and “Show more” buttons.
 - Dedicated pull request page with separate open and closed/merged sections, ten-item pages and “Show more” buttons.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.

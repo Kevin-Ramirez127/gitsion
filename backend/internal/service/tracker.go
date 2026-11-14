@@ -484,6 +484,9 @@ func normalize(repo *model.Repository) {
 	if repo.Tags == nil {
 		repo.Tags = []model.Tag{}
 	}
+	if repo.Pushes == nil {
+		repo.Pushes = []model.Push{}
+	}
 	if repo.Issues == nil {
 		repo.Issues = []model.Issue{}
 	}

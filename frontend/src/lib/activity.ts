@@ -1,5 +1,5 @@
-import type { Issue, PullRequest, Repository, User } from './types';
-import { repositoryPath } from './format';
+import type { Issue, PullRequest, Push, Repository, User } from './types';
+import { repositoryPath } from './format.ts';
 
 /** How many activities the dashboard shows before offering the full feed. */
 export const FEED_PAGE_SIZE = 100;
@@ -23,6 +23,7 @@ export interface Activity {
   branch?: string;
   labels?: string[];
   draft?: boolean;
+  forced?: boolean;
 }
 
 export interface ActivityGroup {
@@ -104,24 +105,29 @@ function issueActivity(repo: Repository, issue: Issue): Activity | null {
   };
 }
 
-function pushActivity(repo: Repository): Activity | null {
-  const time = timestamp(repo.pushedAt);
-  if (!time) return null;
+function pushActivity(repo: Repository, push: Push): Activity | null {
+  const time = timestamp(push.timestamp);
+  if (
+    !time || !push.actor?.login || push.id <= 0 || !push.ref ||
+    !push.after || /^0+$/.test(push.after)
+  ) return null;
 
-  const branch = repo.defaultBranch || undefined;
+  const branch = push.ref.replace(/^refs\/heads\//, '');
+  const after = encodeURIComponent(push.after);
+  const hasBefore = push.before && !/^0+$/.test(push.before);
   return {
-    id: `push:${repo.fullName}`,
+    id: `push:${repo.fullName}:${push.id}`,
     kind: 'push',
     action: 'pushed',
     timestamp: new Date(time).toISOString(),
-    // Snapshots do not include the pusher, so the repository owner stands in.
-    actor: repo.owner,
-    title: branch ?? 'default branch',
-    url: branch
-      ? `${repo.htmlUrl}/commits/${encodeURIComponent(branch)}`
-      : `${repo.htmlUrl}/commits`,
+    actor: push.actor,
+    title: branch,
+    url: hasBefore
+      ? `${repo.htmlUrl}/compare/${encodeURIComponent(push.before)}...${after}`
+      : `${repo.htmlUrl}/commit/${after}`,
     repo,
     branch,
+    forced: push.forced,
   };
 }
 
@@ -130,8 +136,11 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
   const activities: Activity[] = [];
 
   for (const repo of repos) {
-    const push = pushActivity(repo);
-    if (push) activities.push(push);
+    // A legacy pushedAt timestamp has no actor or ref; do not invent a push.
+    for (const push of repo.pushes ?? []) {
+      const activity = pushActivity(repo, push);
+      if (activity) activities.push(activity);
+    }
 
     if (repo.latestPr) {
       const pull = pullActivity(repo, repo.latestPr);
@@ -202,7 +211,7 @@ export function groupActivities(
 export function activityActionLabel(activity: Activity): string {
   switch (activity.kind) {
     case 'push':
-      return 'pushed to';
+      return activity.forced ? 'force-pushed to' : 'pushed to';
     case 'pull':
       return `${activity.action} pull request`;
     case 'issue':
