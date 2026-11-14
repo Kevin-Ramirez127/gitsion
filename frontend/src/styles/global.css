@@ -19,6 +19,9 @@
   --theme-dark-faint: #8d887d;
   --theme-dark-accent: #ff4d5e;
   --theme-dark-accent-soft: #2b0d12;
+  --theme-dark-state-open: #4cc38a;
+  --theme-dark-state-open-soft: #10261c;
+  --theme-dark-on-state-open: #04150d;
   --theme-dark-on-strong: #111111;
   --theme-dark-on-accent: #16070a;
   --theme-dark-placeholder: #7c776d;
@@ -34,6 +37,9 @@
   --theme-light-faint: #666666;
   --theme-light-accent: #d40018;
   --theme-light-accent-soft: #f7dadd;
+  --theme-light-state-open: #137a3f;
+  --theme-light-state-open-soft: #dcf1e4;
+  --theme-light-on-state-open: #ffffff;
   --theme-light-on-strong: #ffffff;
   --theme-light-on-accent: #ffffff;
   --theme-light-placeholder: #9a958a;
@@ -49,6 +55,12 @@
   --faint: var(--theme-dark-faint);
   --accent: var(--theme-dark-accent);
   --accent-soft: var(--theme-dark-accent-soft);
+  --state-open: var(--theme-dark-state-open);
+  --state-open-soft: var(--theme-dark-state-open-soft);
+  --on-state-open: var(--theme-dark-on-state-open);
+  --state-closed: var(--accent);
+  --state-closed-soft: var(--accent-soft);
+  --on-state-closed: var(--on-accent);
   --on-strong: var(--theme-dark-on-strong);
   --on-accent: var(--theme-dark-on-accent);
   --placeholder: var(--theme-dark-placeholder);
@@ -71,6 +83,12 @@
   --faint: var(--theme-light-faint);
   --accent: var(--theme-light-accent);
   --accent-soft: var(--theme-light-accent-soft);
+  --state-open: var(--theme-light-state-open);
+  --state-open-soft: var(--theme-light-state-open-soft);
+  --on-state-open: var(--theme-light-on-state-open);
+  --state-closed: var(--accent);
+  --state-closed-soft: var(--accent-soft);
+  --on-state-closed: var(--on-accent);
   --on-strong: var(--theme-light-on-strong);
   --on-accent: var(--theme-light-on-accent);
   --placeholder: var(--theme-light-placeholder);
@@ -989,6 +1007,30 @@ details[open] > summary .filter-toggle::after {
   text-transform: uppercase;
 }
 
+.section-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid currentColor;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.section-tag-open {
+  border-color: var(--state-open);
+  background: var(--state-open);
+  color: var(--on-state-open);
+}
+
+.section-tag-closed {
+  border-color: var(--state-closed);
+  background: var(--state-closed);
+  color: var(--on-state-closed);
+}
+
 .section-note {
   color: var(--faint);
   font-size: 11px;
@@ -1501,9 +1543,9 @@ a.pr-mini:hover {
 }
 
 .badge-open {
-  border-color: var(--text);
-  background: var(--text);
-  color: var(--on-strong);
+  border-color: var(--state-open);
+  background: var(--state-open-soft);
+  color: var(--state-open);
 }
 
 .badge-merged {
@@ -1513,9 +1555,9 @@ a.pr-mini:hover {
 }
 
 .badge-closed {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--text);
+  border-color: var(--state-closed);
+  background: var(--state-closed-soft);
+  color: var(--state-closed);
 }
 
 .badge-draft {

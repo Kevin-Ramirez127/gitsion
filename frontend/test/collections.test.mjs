@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { collectPullRequests, hasOpenPullRequest } from '../src/lib/collections.ts';
+import {
+  collectPullRequests,
+  countIssueTags,
+  filterIssuesByTags,
+  hasOpenPullRequest,
+} from '../src/lib/collections.ts';
 
 test('a repository counts once when any cached non-draft PR is open', () => {
   const latestPr = { number: 3, state: 'merged' };
@@ -25,4 +30,22 @@ test('legacy snapshots retain their latestPr fallback', () => {
     assert.equal(hasOpenPullRequest(repository), true);
     assert.equal(collectPullRequests([repository])[0].pr, latestPr);
   }
+});
+
+test('issue tag filters narrow the next set of available tags', () => {
+  const entry = (labels) => ({ issue: { labels }, repo: { fullName: 'acme/widget' } });
+  const entries = [
+    entry(['bug', 'ui']),
+    entry(['bug']),
+    entry(['docs']),
+  ];
+
+  assert.deepEqual(countIssueTags(entries).map(({ tag, count }) => [tag, count]), [
+    ['bug', 2],
+    ['docs', 1],
+    ['ui', 1],
+  ]);
+
+  const matching = filterIssuesByTags(entries, new Set(['bug']));
+  assert.deepEqual(countIssueTags(matching).map(({ tag }) => tag), ['bug', 'ui']);
 });

@@ -33,10 +33,13 @@ try {
 }
 
 const allIssues = collectIssues(repos);
-const tagCounts = countIssueTags(allIssues);
-const availableTags = new Set(tagCounts.map(({ tag }) => tag));
+const allTagCounts = countIssueTags(allIssues);
+const availableTags = new Set(allTagCounts.map(({ tag }) => tag));
 const selectedTags = new Set(requestedTags.filter((tag) => availableTags.has(tag)));
 const filteredIssues = filterIssuesByTags(allIssues, selectedTags);
+// Once a tag is selected, only offer tags that still occur on the matching
+// issues so every filter reflects the current multi-select.
+const tagCounts = selectedTags.size > 0 ? countIssueTags(filteredIssues) : allTagCounts;
 
 const openIssues = sortIssueEntries(
   filteredIssues.filter(({ issue }) => issue.state !== 'closed'),
@@ -140,10 +143,10 @@ function tagHref(tag: string): string {
   {allIssues.length > 0 && (
     <details class="filters issues-filters" open>
       <summary class="filters-head">
-        <span class="filters-title">Filter by issue tag</span>
+        <span class="filters-title">Filter by issue tags · multi-select</span>
         <span class="filters-status">
           {selectedTags.size > 0
-            ? `${plainNumber(filteredIssues.length)} matching ${filteredIssues.length === 1 ? 'issue' : 'issues'}`
+            ? `${plainNumber(filteredIssues.length)} matching ${filteredIssues.length === 1 ? 'issue' : 'issues'} · ${plainNumber(tagCounts.length)} ${tagCounts.length === 1 ? 'tag' : 'tags'} left`
             : `${plainNumber(tagCounts.length)} tags · most repeated first`}
         </span>
         <span class="filter-toggle" aria-hidden="true"></span>
@@ -205,7 +208,9 @@ function tagHref(tag: string): string {
     <>
       <section class="collection-section" aria-labelledby="open-issues-title">
         <div class="section-head">
-          <h2 class="section-title" id="open-issues-title">Open issues</h2>
+          <h2 class="section-title" id="open-issues-title">
+            <span class="section-tag section-tag-open">Open issues</span>
+          </h2>
           <span class="section-note">
             {plainNumber(openIssues.length)} {openIssues.length === 1 ? 'issue' : 'issues'}
             {openTruncated && ` · showing ${plainNumber(visibleOpen.length)}`}
@@ -239,7 +244,9 @@ function tagHref(tag: string): string {
 
       <section class="collection-section" aria-labelledby="closed-issues-title">
         <div class="section-head">
-          <h2 class="section-title" id="closed-issues-title">Closed issues</h2>
+          <h2 class="section-title" id="closed-issues-title">
+            <span class="section-tag section-tag-closed">Closed issues</span>
+          </h2>
           <span class="section-note">
             {plainNumber(closedIssues.length)} {closedIssues.length === 1 ? 'issue' : 'issues'}
             {closedTruncated && ` · showing ${plainNumber(visibleClosed.length)}`}
