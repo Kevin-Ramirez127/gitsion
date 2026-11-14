@@ -982,6 +982,30 @@ details[open] > summary .filter-toggle::after {
   color: var(--on-strong);
 }
 
+.filter-chip-open {
+  border-color: var(--state-open);
+  color: var(--state-open);
+}
+
+.filter-chip-open:hover,
+.filter-chip-open.is-active {
+  border-color: var(--state-open);
+  background: var(--state-open);
+  color: var(--on-state-open);
+}
+
+.filter-chip-closed {
+  border-color: var(--state-closed);
+  color: var(--state-closed);
+}
+
+.filter-chip-closed:hover,
+.filter-chip-closed.is-active {
+  border-color: var(--state-closed);
+  background: var(--state-closed);
+  color: var(--on-state-closed);
+}
+
 .filter-count {
   padding-left: 5px;
   border-left: 1px solid currentColor;
@@ -1005,30 +1029,6 @@ details[open] > summary .filter-toggle::after {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-}
-
-.section-tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 8px;
-  border: 1px solid currentColor;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
-.section-tag-open {
-  border-color: var(--state-open);
-  background: var(--state-open);
-  color: var(--on-state-open);
-}
-
-.section-tag-closed {
-  border-color: var(--state-closed);
-  background: var(--state-closed);
-  color: var(--on-state-closed);
 }
 
 .section-note {

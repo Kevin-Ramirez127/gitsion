@@ -15,6 +15,8 @@ export interface TagCount {
   count: number;
 }
 
+export type IssueState = 'open' | 'closed';
+
 function timeValue(value?: string | null): number {
   if (!value) return 0;
   const time = new Date(value).getTime();
@@ -105,4 +107,24 @@ export function countIssueTags(entries: IssueEntry[]): TagCount[] {
 export function filterIssuesByTags(entries: IssueEntry[], tags: Set<string>): IssueEntry[] {
   if (tags.size === 0) return entries;
   return entries.filter(({ issue }) => issue.labels.some((label) => tags.has(label)));
+}
+
+/** Resolve an issue state, treating legacy snapshots without a state as open. */
+export function issueState(issue: Issue): IssueState {
+  return issue.state === 'closed' ? 'closed' : 'open';
+}
+
+/** Combined status filter: no selection or both states mean every issue. */
+export function filterIssuesByState(
+  entries: IssueEntry[],
+  states: Set<IssueState>,
+): IssueEntry[] {
+  if (states.size === 0 || states.size >= 2) return entries;
+  return entries.filter(({ issue }) => states.has(issueState(issue)));
+}
+
+export function countIssueStates(entries: IssueEntry[]): Record<IssueState, number> {
+  const counts: Record<IssueState, number> = { open: 0, closed: 0 };
+  for (const { issue } of entries) counts[issueState(issue)] += 1;
+  return counts;
 }

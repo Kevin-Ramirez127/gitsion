@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   collectPullRequests,
+  countIssueStates,
   countIssueTags,
+  filterIssuesByState,
   filterIssuesByTags,
   hasOpenPullRequest,
 } from '../src/lib/collections.ts';
@@ -48,4 +50,24 @@ test('issue tag filters narrow the next set of available tags', () => {
 
   const matching = filterIssuesByTags(entries, new Set(['bug']));
   assert.deepEqual(countIssueTags(matching).map(({ tag }) => tag), ['bug', 'ui']);
+});
+
+test('status filters are multi-select and legacy issues count as open', () => {
+  const entries = [
+    { issue: { state: 'open', labels: [] }, repo: {} },
+    { issue: { state: 'closed', labels: [] }, repo: {} },
+    { issue: { state: undefined, labels: [] }, repo: {} },
+  ];
+
+  assert.deepEqual(countIssueStates(entries), { open: 2, closed: 1 });
+  assert.equal(filterIssuesByState(entries, new Set()).length, 3);
+  assert.deepEqual(
+    filterIssuesByState(entries, new Set(['open'])).map(({ issue }) => issue.state),
+    ['open', undefined],
+  );
+  assert.deepEqual(
+    filterIssuesByState(entries, new Set(['closed'])).map(({ issue }) => issue.state),
+    ['closed'],
+  );
+  assert.equal(filterIssuesByState(entries, new Set(['open', 'closed'])).length, 3);
 });
