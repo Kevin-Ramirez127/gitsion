@@ -34,6 +34,7 @@ limit. Private repositories are never tracked.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
 - Always-visible search bar that matches project names, owners and cached contributors. Search combines with the feed filters and updates the dashboard in place.
+- Compact activity ranking of the top five repositories, with proportional bars and exact repository filters. Counts use the complete filtered feed before its display limit.
 - Feed filters for activity type and issue labels, plus an owner filter. Both sections start collapsed and remember their open state across in-place updates. Links carry the active filters so they can be combined.
 - Repository detail page with the latest PR (open/merged/closed), up to 10 tags, open issues with labels, owner card and repository facts.
 - Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
@@ -57,6 +58,7 @@ Inside a group, activities stay newest-first. The same filters work in both view
 | --- | --- | --- |
 | Search | `?q=astro` | Matches repository name, owner or a cached contributor login. Space-separated terms must all match. |
 | Owner | `?owner=acme` | Limits the feed and stats to one tracked owner. |
+| Repository | `?repo=acme/project` | Limits the feed and stats to that exact repository, case-insensitively. Click a ranking bar to select it; click again or use “Clear repository filter” to remove it. |
 | Activity type | `?kind=push`, `?kind=pull`, `?kind=issue` | Repeat the parameter to select several kinds; omit it for all. |
 | Issue label | `?label=bug` | Keeps only issue activities carrying any selected label. |
 | Show all | `?show=all` | Removes the default 100-activity cap. |
@@ -66,6 +68,11 @@ owners and filter sections start collapsed; the filter summary still shows the
 matching activity count. Each chip shows how many activities it matches and
 clears with a second click, and a search for a contributor also narrows the feed
 to that contributor's repositories.
+
+The activity ranking sits between the summary cards and feed controls. It follows
+search, owner, activity-type and label filters, and keeps the other matching
+repositories visible when one is selected. Its counts describe the activity
+currently available in cached snapshots rather than a complete event history.
 
 ## SEO and indexing
 
@@ -88,7 +95,7 @@ directives, Open Graph and Twitter Card tags, and JSON-LD from
 schema with a search action; issues and pull requests are `CollectionPage`;
 repository pages are `WebPage` plus `BreadcrumbList`.
 
-Filtered, paginated and transient views (`?q=`, `?owner=`, `?kind=`, `?label=`,
+Filtered, paginated and transient views (`?q=`, `?owner=`, `?repo=`, `?kind=`, `?label=`,
 `?view=`, `?show=`, `?tag=`, `?open=`, `?closed=` and flash messages) canonicalize
 to the clean page and emit `noindex,follow`, so crawlers see one URL per
 document. `/admin` and the custom 404 page are `noindex,nofollow`.

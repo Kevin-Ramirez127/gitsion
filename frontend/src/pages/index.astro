@@ -1,12 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import ActivityFeed from '../components/ActivityFeed.astro';
+import ActivityRanking from '../components/ActivityRanking.astro';
 import EmptyState from '../components/EmptyState.astro';
 import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
 import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
-import { buildActivityFeed, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
+import { buildActivityFeed, rankRepositoryActivity, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
 import { hasOpenPullRequest, isOpenIssue } from '../lib/collections';
 import { getHeroCopy, getSiteConfig } from '../lib/config';
@@ -17,6 +18,8 @@ const hero = getHeroCopy();
 const site = getSiteConfig();
 const searchParams = Astro.url.searchParams;
 const ownerFilter = (searchParams.get('owner') ?? '').trim();
+const repositoryFilter = (searchParams.get('repo') ?? '').trim();
+const repositoryKey = repositoryFilter.toLowerCase();
 const query = (searchParams.get('q') ?? '').trim();
 const okMessage = searchParams.get('ok');
 const errorMessage = searchParams.get('error');
@@ -48,7 +51,7 @@ try {
 }
 
 const searchTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
-const searchedRepos =
+const matchingRepos =
   searchTerms.length === 0
     ? repos
     : repos.filter((repo) => {
@@ -62,6 +65,13 @@ const searchedRepos =
           .toLowerCase();
         return searchTerms.every((term) => haystack.includes(term));
       });
+
+const searchedRepos = repositoryFilter
+  ? matchingRepos.filter((repo) => repo.fullName.toLowerCase() === repositoryKey)
+  : matchingRepos;
+const activeRepository =
+  matchingRepos.find((repo) => repo.fullName.toLowerCase() === repositoryKey)?.fullName ??
+  repositoryFilter;
 
 const totalIssues = searchedRepos.reduce(
   (total, repo) => total + repo.issues.filter(isOpenIssue).length,
@@ -78,11 +88,14 @@ const activeOwner =
   ownerFilter;
 const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
 
-const allActivities = buildActivityFeed(searchedRepos);
+const sourceActivities = buildActivityFeed(matchingRepos);
+const allActivities = repositoryFilter
+  ? sourceActivities.filter((activity) => activity.repo.fullName.toLowerCase() === repositoryKey)
+  : sourceActivities;
 
 const availableLabels = [
   ...new Set(
-    searchedRepos.flatMap((repo) =>
+    matchingRepos.flatMap((repo) =>
       repo.issues.filter(isOpenIssue).flatMap((issue) => issue.labels),
     ),
   ),
@@ -103,7 +116,7 @@ for (const activity of allActivities) {
   }
 }
 
-const activities = allActivities.filter((activity) => {
+const filteredActivities = sourceActivities.filter((activity) => {
   if (selectedKinds.size > 0 && !selectedKinds.has(activity.kind)) return false;
   if (selectedLabels.size > 0) {
     if (activity.kind !== 'issue') return false;
@@ -111,6 +124,12 @@ const activities = allActivities.filter((activity) => {
   }
   return true;
 });
+
+// Keep the ranking's comparison context while one repository is selected.
+const repositoryRanking = rankRepositoryActivity(filteredActivities);
+const activities = repositoryFilter
+  ? filteredActivities.filter((activity) => activity.repo.fullName.toLowerCase() === repositoryKey)
+  : filteredActivities;
 
 const visibleActivities = showAll ? activities : activities.slice(0, FEED_PAGE_SIZE);
 const truncated = !showAll && activities.length > FEED_PAGE_SIZE;
@@ -124,19 +143,24 @@ const activitySummary = hasFilters
 // the clean dashboard and keep it out of the index.
 const filteredView = Astro.url.search.length > 0;
 
-const seoTitle = query
-  ? `Search “${query}” · ${site.name}`
-  : ownerFilter
-    ? `Activity from ${activeOwner} · ${site.name}`
-    : site.title;
-const seoDescription = query
-  ? `Repositories, pushes, pull requests and issues matching “${query}” on ${site.name}.`
-  : ownerFilter
-    ? `Recent pushes, pull requests and issues from repositories owned by ${activeOwner} on ${site.name}.`
-    : site.description;
+const seoTitle = repositoryFilter
+  ? `Activity in ${activeRepository} · ${site.name}`
+  : query
+    ? `Search “${query}” · ${site.name}`
+    : ownerFilter
+      ? `Activity from ${activeOwner} · ${site.name}`
+      : site.title;
+const seoDescription = repositoryFilter
+  ? `Recent pushes, pull requests and issues from ${activeRepository} on ${site.name}.`
+  : query
+    ? `Repositories, pushes, pull requests and issues matching “${query}” on ${site.name}.`
+    : ownerFilter
+      ? `Recent pushes, pull requests and issues from repositories owned by ${activeOwner} on ${site.name}.`
+      : site.description;
 
 interface FeedQuery {
   owner: string;
+  repo: string;
   q: string;
   view: FeedView;
   kinds: ActivityKind[];
@@ -146,6 +170,7 @@ interface FeedQuery {
 
 function feedQuery(overrides: Partial<FeedQuery> = {}): string {
   const owner = overrides.owner ?? ownerFilter;
+  const repo = overrides.repo ?? repositoryFilter;
   const q = overrides.q ?? query;
   const nextView = overrides.view ?? view;
   const kinds = overrides.kinds ?? [...selectedKinds];
@@ -154,6 +179,7 @@ function feedQuery(overrides: Partial<FeedQuery> = {}): string {
 
   const params = new URLSearchParams();
   if (owner) params.set('owner', owner);
+  if (repo) params.set('repo', repo);
   if (q) params.set('q', q);
   if (nextView === 'user') params.set('view', 'user');
   for (const kind of kinds) params.append('kind', kind);
@@ -252,10 +278,11 @@ function labelHref(label: string): string {
     </div>
     <p class="search-hint">
       {query
-        ? `${plainNumber(searchedRepos.length)} of ${plainNumber(repos.length)} projects match “${query}”.`
+        ? `${plainNumber(matchingRepos.length)} of ${plainNumber(repos.length)} projects match “${query}”.`
         : 'Matches repository names, owners and known contributors.'}
     </p>
     {ownerFilter && <input type="hidden" name="owner" value={ownerFilter} />}
+    {repositoryFilter && <input type="hidden" name="repo" value={repositoryFilter} />}
     {view === 'user' && <input type="hidden" name="view" value="user" />}
     {[...selectedKinds].map((kind) => <input type="hidden" name="kind" value={kind} />)}
     {[...selectedLabels].map((label) => <input type="hidden" name="label" value={label} />)}
@@ -273,13 +300,15 @@ function labelHref(label: string): string {
       label="Repositories"
       value={plainNumber(searchedRepos.length)}
       hint={
-        query
-          ? `matching “${query}”`
-          : ownerFilter
-            ? `filtered by ${activeOwner}`
-            : lastSync
-              ? `updated ${relativeTime(lastSync)}`
-              : 'tracked repositories'
+        repositoryFilter
+          ? `filtered by ${activeRepository}`
+          : query
+            ? `matching “${query}”`
+            : ownerFilter
+              ? `filtered by ${activeOwner}`
+              : lastSync
+                ? `updated ${relativeTime(lastSync)}`
+                : 'tracked repositories'
       }
       icon="repo"
     />
@@ -298,6 +327,13 @@ function labelHref(label: string): string {
       href="/pulls"
     />
   </section>
+
+  <ActivityRanking
+    ranking={repositoryRanking}
+    selectedRepository={activeRepository}
+    hrefFor={(fullName) => feedQuery({ repo: fullName.toLowerCase() === repositoryKey ? '' : fullName })}
+    clearHref={feedQuery({ repo: '' })}
+  />
 
   <div class="feed-controls">
     {owners.length > 0 && (
@@ -403,7 +439,7 @@ function labelHref(label: string): string {
 
   <div class="section-head">
     <h2 class="section-title" data-feed-heading tabindex="-1">
-      {query ? `Matching “${query}”` : activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
+      {repositoryFilter ? `Activity in ${activeRepository}` : query ? `Matching “${query}”` : activeOwner ? `Activity from ${activeOwner}` : 'Latest activity'}
     </h2>
     <span class="section-note" data-feed-summary>
       {activitySummary}
@@ -412,7 +448,15 @@ function labelHref(label: string): string {
     </span>
   </div>
 
-  {repos.length > 0 && activities.length > 0 ? (
+  {repositoryFilter && searchedRepos.length === 0 && repos.length > 0 ? (
+    <EmptyState
+      title="Selected repository is outside these filters"
+      text="Clear the repository filter or adjust your search and owner filters."
+      icon="filter"
+    >
+      <a class="btn" href={feedQuery({ repo: '' })}>Clear repository filter</a>
+    </EmptyState>
+  ) : repos.length > 0 && activities.length > 0 ? (
     <ActivityFeed activities={visibleActivities} view={view} />
   ) : repos.length > 0 && allActivities.length > 0 ? (
     <EmptyState
@@ -422,7 +466,7 @@ function labelHref(label: string): string {
     >
       <a class="btn" href={feedQuery({ kinds: [], labels: [] })}>Clear filters</a>
     </EmptyState>
-  ) : query && repos.length > 0 ? (
+  ) : query && matchingRepos.length === 0 && repos.length > 0 ? (
     <EmptyState
       title={`No projects match “${query}”`}
       text="Search covers project names, owners and known contributors. Try a shorter term or clear the search."

@@ -205,3 +205,150 @@ test('built dashboard protects mutations and renders cached activity accurately'
     assert.ok(!people.includes('https://github.com/alice'));
   });
 });
+
+test('repository ranking counts the full feed and filters exact repositories', async (t) => {
+  const issue = (number, title, labels) => ({ number, title, labels, state: 'open',
+    author: user('reporter'), htmlUrl: `https://github.com/acme/widget/issues/${number}`,
+    createdAt: '2026-02-05T00:00:00Z', updatedAt: '2026-02-05T00:00:00Z', comments: 0 });
+  function fixture(fullName, pushCount, issues = []) {
+    const [owner, name] = fullName.split('/');
+    return { ...repo, fullName, name, owner: user(owner), htmlUrl: `https://github.com/${fullName}`,
+      latestPr: null, pullRequests: [], issues,
+      pushes: Array.from({ length: pushCount }, (_, index) => ({
+        id: index + 1, actor: user('pusher'), ref: 'refs/heads/main',
+        before: '1'.repeat(40), after: '2'.repeat(40), timestamp: '2026-02-06T00:00:00Z', forced: false,
+      })),
+    };
+  }
+  let fixtures = [
+    { ...fixture('acme/widget', 100, [issue(1, 'Widget bug', ['bug'])]),
+      latestPr: newest, pullRequests: [newest, unknown, older] },
+    fixture('acme/widget-tools', 5, [issue(2, 'Tools bug one', ['bug']),
+      issue(3, 'Tools bug two', ['bug']), issue(4, 'Tools feature', ['feature'])]),
+    fixture('acme/docs', 3, [issue(5, 'Docs bug', ['bug'])]),
+    fixture('elsewhere/runner', 2),
+    fixture('elsewhere/zeta', 1),
+    fixture('elsewhere/alpha', 1),
+    fixture('acme/inactive', 0),
+  ];
+  const backend = http.createServer((req, res) => {
+    const url = new URL(req.url, 'http://backend.test');
+    res.setHeader('Content-Type', 'application/json');
+    if (url.pathname === '/api/v1/repos') {
+      const owner = url.searchParams.get('owner')?.toLowerCase();
+      return res.end(JSON.stringify({ repositories: fixtures.filter(repository =>
+        !owner || repository.owner.login.toLowerCase() === owner) }));
+    }
+    if (url.pathname === '/api/v1/owners') {
+      const owners = new Map();
+      for (const repository of fixtures) {
+        const owner = owners.get(repository.owner.login) ?? { ...repository.owner, repoCount: 0 };
+        owner.repoCount++;
+        owners.set(owner.login, owner);
+      }
+      return res.end(JSON.stringify({ owners: [...owners.values()] }));
+    }
+    res.statusCode = 404;
+    res.end('{}');
+  });
+  const backendPort = await listen(backend);
+  t.after(() => new Promise(resolve => backend.close(resolve)));
+  const app = await launchFrontend(backendPort, '');
+  t.after(app.stop);
+
+  async function page(path = '/') {
+    const response = await fetch(new URL(path, app.base));
+    assert.equal(response.status, 200);
+    return response.text();
+  }
+  function rankingEntries(html) {
+    const section = html.match(/<section\b[^>]*class="activity-ranking"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? '';
+    return [...section.matchAll(/<a\b[^>]*class="activity-ranking-link[^\"]*"[^>]*>/g)].map(([tag]) => {
+      const label = tag.match(/aria-label="(?:Filter feed by|Clear filter for) ([^\"]+), ([\d,]+) captured activit(?:y|ies)"/);
+      assert.ok(label, `Missing accessible ranking count: ${tag}`);
+      return { name: label[1], count: Number(label[2].replaceAll(',', '')),
+        href: new URL(tag.match(/href="([^\"]+)"/)[1].replaceAll('&amp;', '&'), app.base),
+        active: tag.includes('aria-current="true"') };
+    });
+  }
+  const feedRows = html => [...html.matchAll(/<li class="feed-item">([\s\S]*?)<\/li>/g)].map(match => match[1]);
+  const counts = html => rankingEntries(html).map(({ name, count }) => [name, count]);
+
+  await t.test('the top five include activities beyond the first 100 feed items', async () => {
+    const home = await page();
+    const expected = [['acme/widget', 104], ['acme/widget-tools', 8], ['acme/docs', 4],
+      ['elsewhere/runner', 2], ['elsewhere/alpha', 1]];
+    assert.deepEqual(counts(home), expected);
+    assert.ok(home.includes('Top 5 of 6 repositories'));
+    assert.ok(home.includes('showing 100'));
+    assert.deepEqual(counts(await page('/?show=all')), expected);
+  });
+
+  await t.test('ranking links preserve combined filters and select one exact repository', async () => {
+    const home = await page('/?q=widget&owner=acme&view=user&kind=pull&kind=issue&label=bug&show=all');
+    assert.deepEqual(counts(home), [['acme/widget-tools', 2], ['acme/widget', 1]]);
+    const target = rankingEntries(home).find(entry => entry.name === 'acme/widget');
+    const params = target.href.searchParams;
+    assert.equal(params.get('repo'), 'acme/widget');
+    assert.equal(params.get('q'), 'widget');
+    assert.equal(params.get('owner'), 'acme');
+    assert.equal(params.get('view'), 'user');
+    assert.equal(params.get('show'), 'all');
+    assert.deepEqual(params.getAll('kind'), ['pull', 'issue']);
+    assert.deepEqual(params.getAll('label'), ['bug']);
+
+    const selected = await page(target.href);
+    assert.deepEqual(counts(selected), counts(home));
+    const rows = feedRows(selected);
+    assert.equal(rows.length, 1);
+    assert.ok(rows[0].includes('Widget bug'));
+    assert.match(selected, /Repositories\s*<\/div>\s*<div class="stat-value">1<\/div>/);
+    assert.ok(selected.includes('name="repo" value="acme/widget"'));
+    assert.ok(selected.includes('noindex'));
+    const active = rankingEntries(selected).find(entry => entry.active);
+    assert.equal(active.name, 'acme/widget');
+    assert.equal(active.href.searchParams.has('repo'), false);
+    assert.equal(active.href.searchParams.get('q'), 'widget');
+    assert.deepEqual(active.href.searchParams.getAll('kind'), ['pull', 'issue']);
+    assert.deepEqual(counts(await page(active.href)), counts(home));
+
+    const projectLink = selected.match(/href="([^\"]+)"[^>]*>\s*By project/);
+    assert.ok(projectLink);
+    assert.equal(new URL(projectLink[1].replaceAll('&amp;', '&'), app.base).searchParams.get('repo'), 'acme/widget');
+  });
+
+  await t.test('repository selection ignores case and does not match name prefixes', async () => {
+    const home = await page('/?repo=ACME/WIDGET&show=all');
+    const rows = feedRows(home);
+    assert.equal(rows.length, 104);
+    assert.ok(rows.some(row => row.includes('Widget bug')));
+    assert.ok(rows.every(row => !row.includes('Tools bug') && !row.includes('Tools feature')));
+    assert.equal(rankingEntries(home).find(entry => entry.active).name, 'acme/widget');
+  });
+
+  await t.test('single-repository rankings use the full bar width', async () => {
+    const home = await page('/?q=elsewhere/runner');
+    assert.deepEqual(counts(home), [['elsewhere/runner', 2]]);
+    assert.match(home, /width:\s*100%/);
+  });
+
+  await t.test('empty filters and unknown repository selections remain recoverable', async () => {
+    const noSearch = await page('/?q=missing');
+    assert.deepEqual(counts(noSearch), []);
+    assert.ok(!noSearch.includes('id="activity-ranking-title"'));
+    const noActivity = await page('/?kind=pull&label=bug');
+    assert.deepEqual(counts(noActivity), []);
+    assert.ok(noActivity.includes('No activity matches these filters'));
+    const missingRepository = await page('/?repo=acme/missing');
+    assert.equal(feedRows(missingRepository).length, 0);
+    assert.ok(missingRepository.includes('Selected repository is outside these filters'));
+    assert.ok(missingRepository.includes('Clear repository filter'));
+  });
+
+  await t.test('an empty instance omits the chart', async () => {
+    fixtures = [];
+    const home = await page();
+    assert.ok(!home.includes('id="activity-ranking-title"'));
+    assert.ok(home.includes('Nothing tracked yet'));
+  });
+});

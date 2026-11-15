@@ -3,7 +3,7 @@
 
 (() => {
   const dashboardSelector = '#dashboard';
-  const navSelector = '.filters, .owner-filter, .feed-more, .empty-state, .search-form';
+  const navSelector = '.filters, .owner-filter, .feed-more, .empty-state, .search-form, .activity-ranking';
   const announcer = document.getElementById('feed-announcer');
 
   let controller = null;

@@ -4,6 +4,7 @@ import {
   activityActionLabel,
   buildActivityFeed,
   groupActivities,
+  rankRepositoryActivity,
 } from '../src/lib/activity.ts';
 
 const owner = {
@@ -194,4 +195,33 @@ test('the feed includes older cached PRs even when latestPr is merged', () => {
   const activities = buildActivityFeed([repo({ latestPr: latest, pullRequests: [latest, older] })]);
   assert.deepEqual(activities.map(a => a.number), [2, 1]);
   assert.equal(new Set(activities.map(a => a.id)).size, 2);
+});
+
+test('repository rankings count every captured activity beyond the feed display limit', () => {
+  const activities = buildActivityFeed([
+    repo({ fullName: 'acme/busy',
+      pushes: Array.from({ length: 100 }, (_, index) => push({ id: index + 1 })),
+      latestPr: pull(),
+      issues: [{ number: 2, title: 'Issue', state: 'open', author: owner,
+        htmlUrl: '/issues/2', createdAt: '2026-02-02T10:00:00Z' }],
+    }),
+    repo({ fullName: 'acme/quiet', pushes: [push({ timestamp: '2026-01-01T10:00:00Z' })] }),
+    repo({ fullName: 'acme/inactive' }),
+  ]);
+  assert.ok(activities.slice(0, 100).every(activity => activity.repo.fullName === 'acme/busy'));
+  assert.deepEqual(rankRepositoryActivity(activities), [
+    { fullName: 'acme/busy', count: 102 },
+    { fullName: 'acme/quiet', count: 1 },
+  ]);
+});
+
+test('repository rankings keep ties alphabetical regardless of feed order and handle empty results', () => {
+  const activities = buildActivityFeed([
+    repo({ fullName: 'acme/zeta', pushes: [push()] }),
+    repo({ fullName: 'acme/alpha', pushes: [push()] }),
+  ]);
+  const expected = [{ fullName: 'acme/alpha', count: 1 }, { fullName: 'acme/zeta', count: 1 }];
+  assert.deepEqual(rankRepositoryActivity(activities), expected);
+  assert.deepEqual(rankRepositoryActivity([...activities].reverse()), expected);
+  assert.deepEqual(rankRepositoryActivity([]), []);
 });

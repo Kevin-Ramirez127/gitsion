@@ -37,6 +37,11 @@ export interface ActivityGroup {
   activities: Activity[];
 }
 
+export interface RepositoryActivityCount {
+  fullName: string;
+  count: number;
+}
+
 /**
  * Issues and pull requests that were never touched after creation are reported
  * as "opened". GitHub sets `updated_at` a second or two after `created_at`, so
@@ -170,6 +175,18 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
   });
 
   return activities;
+}
+
+/** Counts the complete filtered feed, before its display limit is applied. */
+export function rankRepositoryActivity(activities: Activity[]): RepositoryActivityCount[] {
+  const counts = new Map<string, number>();
+  for (const activity of activities) {
+    const name = activity.repo.fullName;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([fullName, count]) => ({ fullName, count }))
+    .sort((a, b) => b.count - a.count || a.fullName.localeCompare(b.fullName));
 }
 
 /**
