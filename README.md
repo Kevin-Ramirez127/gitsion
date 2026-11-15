@@ -289,6 +289,7 @@ Errors use a consistent envelope:
 - A tracker goroutine syncs every tracked repository on the configured interval. Concurrent refreshes of the same repo are collapsed with `singleflight`.
 - Each snapshot stores repository metadata, up to 100 pull requests (open and closed/merged), the latest updated PR, up to 10 tags, up to 100 open and 100 closed issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
 - If a sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
+- If a sync explicitly reports non-public visibility, the cached record is marked non-public and hidden from all public API reads. The new non-public snapshot is never stored.
 - MongoDB has a unique index on the normalized `owner/name`, so case variants cannot be tracked twice.
 
 ## Project layout

@@ -361,6 +361,8 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string) (*model.Repo
 
 		snapshot, fetchErr := t.github.FetchSnapshot(ctx, owner, name)
 		if fetchErr == nil && !isPublicRepository(*snapshot) {
+			// Hide the previous public snapshot using the newly observed visibility.
+			existing.Visibility = snapshot.Visibility
 			fetchErr = ErrPrivateRepo
 		}
 		if fetchErr != nil {
