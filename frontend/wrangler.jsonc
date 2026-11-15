@@ -1,0 +1,59 @@
+{
+  // gitsion frontend: Astro SSR on Cloudflare Workers, backend on the VPS.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "gitsion",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-11-07",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist/client",
+    "not_found_handling": "404-page"
+  },
+  "observability": { "enabled": true },
+  // wrangler creates the proxied DNS record for this custom domain.
+  "routes": [{ "pattern": "gitsion.librecourse.uy", "custom_domain": true }],
+  "vars": {
+    "BACKEND_URL": "https://api.gitsion.librecourse.uy",
+    "SITE_URL": "https://gitsion.librecourse.uy",
+
+    // LibreCourseUY branding. Runtime-configurable, see src/lib/config.ts.
+    "SITE_NAME": "LibreCourseUY",
+    "SITE_TAGLINE": "Open source, built in public",
+    "SITE_TITLE": "LibreCourseUY · project activity",
+    "SITE_DESCRIPTION": "Pushes, pull requests and issues from the open source projects built by the LibreCourseUY community.",
+    "HERO_TITLE": "Build in public.|Become open source.",
+    "HERO_DESCRIPTION": "A non-profit FOSS community from Uruguay growing the next generation of open source contributors in Latin America.",
+
+    // Palette derived from librecourseuy/web (src/styles/globals.css).
+    "THEME_LIGHT_BG": "#f5f5f0",
+    "THEME_LIGHT_PANEL": "#ffffff",
+    "THEME_LIGHT_PANEL_2": "#ebeae3",
+    "THEME_LIGHT_PANEL_HOVER": "#e4e3db",
+    "THEME_LIGHT_BORDER": "#dededa",
+    "THEME_LIGHT_RULE_SOFT": "#e8e7e1",
+    "THEME_LIGHT_TEXT": "#17171a",
+    "THEME_LIGHT_MUTED": "#63635c",
+    "THEME_LIGHT_FAINT": "#8a8a82",
+    "THEME_LIGHT_ACCENT": "#106654",
+    "THEME_LIGHT_ACCENT_SOFT": "#dcece7",
+    "THEME_LIGHT_ON_STRONG": "#f5f5f0",
+    "THEME_LIGHT_ON_ACCENT": "#ffffff",
+    "THEME_LIGHT_PLACEHOLDER": "#9a9a92",
+
+    "THEME_DARK_BG": "#101010",
+    "THEME_DARK_PANEL": "#191919",
+    "THEME_DARK_PANEL_2": "#24241f",
+    "THEME_DARK_PANEL_HOVER": "#2b2b26",
+    "THEME_DARK_BORDER": "#2e2e2b",
+    "THEME_DARK_RULE_SOFT": "#262623",
+    "THEME_DARK_TEXT": "#f7f7f0",
+    "THEME_DARK_MUTED": "#9f9f96",
+    "THEME_DARK_FAINT": "#77776f",
+    "THEME_DARK_ACCENT": "#5ec2af",
+    "THEME_DARK_ACCENT_SOFT": "#133029",
+    "THEME_DARK_ON_STRONG": "#101010",
+    "THEME_DARK_ON_ACCENT": "#08211c",
+    "THEME_DARK_PLACEHOLDER": "#6f6f66"
+  }
+}

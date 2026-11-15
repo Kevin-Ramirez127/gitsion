@@ -11,19 +11,22 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "deploy": "astro build && wrangler deploy",
     "test": "node --experimental-strip-types --test test/*.test.mjs",
-    "test:integration": "astro build && node --experimental-strip-types --test test/integration/*.test.mjs",
+    "test:integration": "ASTRO_ADAPTER=node astro build && node --experimental-strip-types --test test/integration/*.test.mjs",
     "start": "node ./dist/server/entry.mjs"
   },
   "dependencies": {
-    "@astrojs/node": "^11.1.9",
+    "@astrojs/cloudflare": "^14.4.6",
     "@easeo/astro": "^0.2.0",
     "@easeo/core": "^0.2.0",
     "astro": "^7.4.2"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",
+    "@astrojs/node": "^11.1.9",
     "@types/node": "^24.19.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.150.0"
   }
 }

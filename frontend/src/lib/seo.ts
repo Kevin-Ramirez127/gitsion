@@ -7,13 +7,13 @@
  * of the index and point their canonical at the clean page instead, so
  * crawlers only see one URL per document.
  */
-import { buildSeoPayload, normalizePublicUrl } from '@easeo/core';
+import { buildSeoPayload, normalizePublicUrl } from './easeo-lite';
 import type {
   Breadcrumb,
   SEOConfig,
   SEOEntity,
   SEOPayload,
-} from '@easeo/core';
+} from './easeo-lite';
 import { getSiteConfig } from './config';
 
 /** Entity types supported by easeo. */
