@@ -1,7 +1,12 @@
 import { loadEnvFile } from 'node:process';
 import { defineConfig } from 'astro/config';
+import cloudflare from '@astrojs/cloudflare';
 import node from '@astrojs/node';
 import easeo from '@easeo/astro';
+
+// Production runs on Cloudflare Workers. The Node adapter exists only so the
+// built SSR integration suite can boot dist/server/entry.mjs in CI/local tests.
+const useNodeAdapter = process.env.ASTRO_ADAPTER === 'node';
 
 // Local development keeps its configuration in the repository root. Node only
 // fills variables that are not already set, so shell and Docker env wins.
@@ -95,8 +100,12 @@ const seoIntegration = easeo({
 export default defineConfig({
   ...(configuredSite ? { site: configuredSite.origin } : {}),
   output: 'server',
-  adapter: node({ mode: 'standalone' }),
+  adapter: useNodeAdapter
+    ? node({ mode: 'standalone' })
+    : cloudflare({ imageService: 'passthrough' }),
   integrations: [seoIntegration],
+  // No Astro sessions: avoids provisioning an unused KV namespace.
+  session: false,
   server: {
     host: true,
     port: 4321,

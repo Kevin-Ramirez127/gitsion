@@ -1,0 +1,10 @@
+# Local runtime environment for the Cloudflare adapter (astro dev / preview).
+# Copy to .dev.vars. Production uses wrangler secrets and vars instead.
+BACKEND_URL=http://localhost:8080
+# Public origin used by canonical links, robots.txt and sitemap.xml.
+SITE_URL=http://localhost:4321
+ADMIN_TOKEN=
+SESSION_SECRET=
+
+# Branding and palette: production values live in wrangler.jsonc. Add any
+# SITE_*, HERO_* or THEME_* variable here to preview a theme locally.

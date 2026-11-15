@@ -131,21 +131,77 @@ make down          # stop the stack
 make test          # Go, frontend unit/SSR tests and Astro type checks
 ```
 
+## Production: Workers frontend + VPS backend
+
+The live instance at `gitsion.librecourse.uy` runs the frontend on Cloudflare
+Workers and keeps the backend and MongoDB on the VPS. Astro 7's Cloudflare
+adapter no longer supports Cloudflare Pages, so the frontend is deployed as a
+Worker with static assets.
+
+1. **Backend and Mongo on the VPS.** Copy the repository to the server and run
+   the VPS compose file. It joins the existing `traefik_net` and is routed at
+   `api.gitsion.librecourse.uy`; neither Mongo nor the backend publishes a host
+   port.
+
+   ```bash
+   rsync -az --delete --exclude .git --exclude node_modules \
+     --exclude frontend/dist ./ deploy@vps:~/gitsion/
+   ssh vps 'cd ~/gitsion && cp deploy/vps/.env.example deploy/vps/.env'
+   # fill in ADMIN_TOKEN (openssl rand -base64 48) and optional GITHUB_TOKEN
+   ssh vps 'cd ~/gitsion && docker compose -f deploy/vps/docker-compose.yml up -d --build'
+   ```
+
+   Add a proxied `A` record for `api.gitsion` pointing at the VPS; Traefik
+   obtains the certificate through its existing Let's Encrypt resolver.
+
+2. **Frontend on Cloudflare Workers.**
+
+   ```bash
+   cd frontend
+   npm install
+   SITE_URL=https://gitsion.librecourse.uy npm run build
+   npx wrangler deploy
+   npx wrangler secret put ADMIN_TOKEN      # same value as the VPS
+   npx wrangler secret put SESSION_SECRET   # openssl rand -base64 48
+   ```
+
+   `frontend/wrangler.jsonc` declares the `gitsion.librecourse.uy` custom
+   domain, so wrangler creates that DNS record itself. `BACKEND_URL`,
+   `SITE_URL`, the LibreCourseUY `SITE_*`/`HERO_*` copy and the `THEME_*`
+   palette are plain runtime variables in the same file.
+
+   easeo's runtime is a native napi module that `workerd` cannot load, so the
+   Worker uses `frontend/src/lib/easeo-lite.ts` for request-time SEO payloads.
+   The build-time `@easeo/astro` integration still runs in Node and can emit the
+   SEO contract when `SITE_URL` is set.
+
+3. **Verify.**
+
+   ```bash
+   curl -s https://api.gitsion.librecourse.uy/healthz
+   curl -s https://gitsion.librecourse.uy/healthz
+   ```
+
+   Then open `https://gitsion.librecourse.uy/admin` and sign in with
+   `ADMIN_TOKEN` to add repositories.
+
 ## Local development
 
 Prerequisites: Go 1.27+, Node 24+, Docker (for MongoDB).
 
 ```bash
 cp .env.example .env
+cp frontend/.dev.vars.example frontend/.dev.vars
 make mongo         # MongoDB on localhost:27017
 make backend       # terminal 1: API on :8080
 make frontend      # terminal 2: Astro on :4321
 ```
 
-`make frontend` loads `../.env` through `astro.config.mjs`, so `ADMIN_TOKEN` is
-available to both sides. Shell environment variables take precedence over the
-file. In production, pass `ADMIN_TOKEN` and `SESSION_SECRET` to the runtime
-container instead.
+`make backend` reads the root `.env`. `make frontend` runs Astro in the
+Cloudflare `workerd` runtime, so the frontend reads `frontend/.dev.vars`
+(`BACKEND_URL`, `ADMIN_TOKEN`, `SESSION_SECRET`); keep `ADMIN_TOKEN` equal on
+both sides. Production uses the same values as wrangler secrets and VPS
+environment variables instead.
 
 The backend reads `.env` from the current directory or one level up (without
 overriding real environment variables). `BACKEND_URL` defaults to
@@ -321,9 +377,10 @@ cd backend && go test ./...
 cd frontend && npm test && npm run check && npm run test:integration
 ```
 
-The frontend integration suite builds and starts the SSR server against a local
-fake backend. It checks administrative URL aliases, signed sessions, cross-site
-requests, read-only mode and the rendered activity feed without using GitHub or MongoDB.
+The frontend integration suite builds with the Node adapter (`ASTRO_ADAPTER=node`)
+and starts the SSR server against a local fake backend. It checks administrative
+URL aliases, signed sessions, cross-site requests, read-only mode and the
+rendered activity feed without using GitHub or MongoDB.
 
 Mongo-backed store tests are opt-in:
 
