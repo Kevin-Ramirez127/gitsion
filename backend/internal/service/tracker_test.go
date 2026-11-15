@@ -172,6 +172,70 @@ func TestListHidesLegacyPrivateRepositories(t *testing.T) {
 	}
 }
 
+func TestSyncHidesRepositoriesThatBecomeNonPublic(t *testing.T) {
+	for _, method := range []string{"refresh", "sync_all"} {
+		for _, visibility := range []string{"private", "internal", "", "unknown"} {
+			t.Run(method+"/"+visibility, func(t *testing.T) {
+				ctx := context.Background()
+				st := newFakeStore()
+				gh := newFakeGitHub()
+				tr := newTestTracker(st, gh)
+
+				before, err := tr.Track(ctx, "acme/widget")
+				if err != nil {
+					t.Fatalf("Track: %v", err)
+				}
+				gh.snapshot.Visibility = visibility
+				gh.snapshot.Description = "non-public description"
+
+				if method == "refresh" {
+					_, err = tr.Refresh(ctx, "acme", "widget")
+				} else {
+					var synced int
+					synced, err = tr.SyncAll(ctx)
+					if synced != 0 {
+						t.Errorf("synced = %d, want 0", synced)
+					}
+				}
+				if !errors.Is(err, ErrPrivateRepo) {
+					t.Fatalf("sync error = %v, want ErrPrivateRepo", err)
+				}
+
+				for _, owner := range []string{"", "acme"} {
+					repos, err := tr.List(ctx, owner)
+					if err != nil {
+						t.Fatalf("List(%q): %v", owner, err)
+					}
+					if len(repos) != 0 {
+						t.Errorf("List(%q) returned %d non-public repositories", owner, len(repos))
+					}
+				}
+				if _, err := tr.Get(ctx, "acme", "widget"); !errors.Is(err, ErrNotTracked) {
+					t.Errorf("Get error = %v, want ErrNotTracked", err)
+				}
+				owners, err := tr.Owners(ctx)
+				if err != nil {
+					t.Fatalf("Owners: %v", err)
+				}
+				if len(owners) != 0 {
+					t.Errorf("Owners returned %d owners of non-public repositories", len(owners))
+				}
+
+				cached, err := st.Get(ctx, "acme", "widget")
+				if err != nil {
+					t.Fatalf("cached repository: %v", err)
+				}
+				if cached.Description != before.Description {
+					t.Error("non-public snapshot replaced the last public data")
+				}
+				if !cached.LastSyncedAt.Equal(before.LastSyncedAt) {
+					t.Error("last successful sync should not move on non-public visibility")
+				}
+			})
+		}
+	}
+}
+
 func TestRefreshCooldown(t *testing.T) {
 	st := newFakeStore()
 	gh := newFakeGitHub()
@@ -222,6 +286,9 @@ func TestRefreshKeepsSnapshotOnError(t *testing.T) {
 	}
 	if !after.LastSyncedAt.Equal(before.LastSyncedAt) {
 		t.Error("last successful sync should not move on failure")
+	}
+	if _, err := tr.Get(context.Background(), "acme", "widget"); err != nil {
+		t.Errorf("public snapshot should remain visible after a temporary error: %v", err)
 	}
 }
 
