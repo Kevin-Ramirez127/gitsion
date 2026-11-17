@@ -65,6 +65,8 @@ func TestMongoStoreLifecycle(t *testing.T) {
 
 	got.Stars = 99
 	got.LastSyncedAt = time.Now().UTC()
+	got.Hidden = true
+	got.NextSyncAt = time.Now().UTC().Add(time.Hour).Truncate(time.Millisecond)
 	if err := st.ReplaceSnapshot(ctx, got); err != nil {
 		t.Fatalf("ReplaceSnapshot: %v", err)
 	}
@@ -72,7 +74,7 @@ func TestMongoStoreLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Get after update: %v", err)
 	}
-	if updated.Stars != 99 || updated.TrackedAt.IsZero() {
+	if updated.Stars != 99 || updated.TrackedAt.IsZero() || !updated.Hidden || !updated.NextSyncAt.Equal(got.NextSyncAt) {
 		t.Fatalf("updated repo = %+v", updated)
 	}
 

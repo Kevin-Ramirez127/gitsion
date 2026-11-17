@@ -41,6 +41,9 @@ var (
 	// ErrNotFound means the repository does not exist or is not visible with
 	// the configured credentials.
 	ErrNotFound = errors.New("github: not found")
+	// ErrRepositoryUnavailable is a 404 from the repository metadata endpoint,
+	// rather than from a collection such as tags or repository activity.
+	ErrRepositoryUnavailable = errors.New("github: repository unavailable")
 	// ErrUnauthorized means GitHub rejected the configured token.
 	ErrUnauthorized = errors.New("github: unauthorized")
 )
@@ -72,6 +75,7 @@ type Client struct {
 	http    *http.Client
 	baseURL string
 	token   string
+	quota   requestBudget
 }
 
 // NewClient creates a client. baseURL can point at a fake server in tests.
@@ -83,11 +87,17 @@ func NewClient(baseURL, token string) *Client {
 	}
 }
 
-// FetchSnapshot retrieves repository metadata, pull requests, tags, issues and
-// top contributors and attributed push activities in parallel.
+// FetchSnapshot checks repository visibility before fetching public collections
+// in parallel. A failed collection must not mask a visibility change.
 func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.Repository, error) {
+	repo, err := c.FetchRepository(ctx, owner, name)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(repo.Visibility), "public") {
+		return repo, nil
+	}
 	var (
-		repo         *model.Repository
 		prs          []model.PullRequest
 		tags         []model.Tag
 		issues       []model.Issue
@@ -96,10 +106,6 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 	)
 
 	group, ctx := errgroup.WithContext(ctx)
-	group.Go(func() (err error) {
-		repo, err = c.fetchRepository(ctx, owner, name)
-		return err
-	})
 	group.Go(func() (err error) {
 		prs, err = c.fetchPullRequests(ctx, owner, name)
 		return err
@@ -138,9 +144,14 @@ func (c *Client) FetchSnapshot(ctx context.Context, owner, name string) (*model.
 	return repo, nil
 }
 
-func (c *Client) fetchRepository(ctx context.Context, owner, name string) (*model.Repository, error) {
+// FetchRepository is a cheap visibility and push-freshness check. Only a 404
+// from this endpoint means the repository itself is unavailable.
+func (c *Client) FetchRepository(ctx context.Context, owner, name string) (*model.Repository, error) {
 	var raw ghRepository
 	if err := c.get(ctx, repoPath(owner, name), &raw); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, fmt.Errorf("%w: %w", ErrRepositoryUnavailable, err)
+		}
 		return nil, err
 	}
 	if raw.FullName == "" {
@@ -164,6 +175,8 @@ func (c *Client) fetchRepository(ctx context.Context, owner, name string) (*mode
 		Tags:          []model.Tag{},
 		Issues:        []model.Issue{},
 		Contributors:  []model.User{},
+		PullRequests:  []model.PullRequest{},
+		Pushes:        []model.Push{},
 	}, nil
 }
 
@@ -365,6 +378,9 @@ func attributeMerges(prs []model.PullRequest, activities []ghActivity) {
 }
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
 		return err
@@ -376,11 +392,15 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
+	if err := c.quota.begin(); err != nil {
+		return err
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("github: request failed: %w", err)
 	}
 	defer resp.Body.Close()
+	c.quota.observe(resp.Header)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if resp.StatusCode == http.StatusNoContent {
@@ -399,8 +419,9 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	case http.StatusUnauthorized:
 		return fmt.Errorf("%w: %s", ErrUnauthorized, message)
 	case http.StatusForbidden, http.StatusTooManyRequests:
-		if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.StatusCode == http.StatusTooManyRequests {
-			return &RateLimitError{ResetAt: rateLimitReset(resp.Header)}
+		if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.StatusCode == http.StatusTooManyRequests ||
+			resp.Header.Get("Retry-After") != "" || strings.Contains(strings.ToLower(message), "secondary rate limit") {
+			return c.quota.pause(resp.Header)
 		}
 	}
 	return &APIError{Status: resp.StatusCode, Message: message}

@@ -177,6 +177,26 @@ export function buildActivityFeed(repos: Repository[]): Activity[] {
   return activities;
 }
 
+export type ActivityWindow = '7d' | '30d' | 'all';
+
+export function parseActivityWindow(value: string | null): ActivityWindow {
+  return value === '30d' || value === 'all' ? value : '7d';
+}
+
+/** A rolling UTC duration over captured items, not a complete event history. */
+export function filterActivityWindow(
+  activities: Activity[],
+  window: ActivityWindow,
+  now = Date.now(),
+): Activity[] {
+  if (window === 'all') return activities;
+  const cutoff = now - (window === '7d' ? 7 : 30) * 24 * 60 * 60 * 1000;
+  return activities.filter((activity) => {
+    const time = Date.parse(activity.timestamp);
+    return Number.isFinite(time) && time >= cutoff && time <= now;
+  });
+}
+
 /** Counts the complete filtered feed, before its display limit is applied. */
 export function rankRepositoryActivity(activities: Activity[]): RepositoryActivityCount[] {
   const counts = new Map<string, number>();

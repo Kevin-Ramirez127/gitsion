@@ -107,6 +107,11 @@ type Repository struct {
 	LastSyncedAt    time.Time `bson:"last_synced_at" json:"lastSyncedAt"`
 	LastSyncAttempt time.Time `bson:"last_sync_attempt" json:"lastSyncAttempt"`
 	SyncError       string    `bson:"sync_error,omitempty" json:"syncError,omitempty"`
+
+	// Hidden quarantines a snapshot after the repository metadata endpoint
+	// becomes unavailable, without claiming GitHub confirmed private visibility.
+	Hidden     bool      `bson:"hidden,omitempty" json:"-"`
+	NextSyncAt time.Time `bson:"next_sync_at,omitempty" json:"-"`
 }
 
 // OwnerSummary aggregates tracked repositories per owner for the dashboard.

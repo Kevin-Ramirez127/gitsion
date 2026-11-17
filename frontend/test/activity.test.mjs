@@ -3,9 +3,27 @@ import test from 'node:test';
 import {
   activityActionLabel,
   buildActivityFeed,
+  filterActivityWindow,
   groupActivities,
+  parseActivityWindow,
   rankRepositoryActivity,
 } from '../src/lib/activity.ts';
+
+test('activity windows exclude older and future items at UTC duration boundaries', () => {
+  const now = Date.parse('2026-11-16T00:00:00Z');
+  const at = (days, id) => ({ id, timestamp: new Date(now - days * 86_400_000).toISOString() });
+  const activities = [at(-1, 'future'), at(0, 'now'), at(7, 'week'),
+    at(7 + 1 / 86_400_000, 'before-week'), at(30, 'month'),
+    at(30 + 1 / 86_400_000, 'before-month'), { id: 'invalid', timestamp: 'invalid' }];
+  assert.deepEqual(filterActivityWindow(activities, '7d', now).map(item => item.id), ['now', 'week']);
+  assert.deepEqual(filterActivityWindow(activities, '30d', now).map(item => item.id),
+    ['now', 'week', 'before-week', 'month']);
+  assert.deepEqual(filterActivityWindow(activities, 'all', now), activities);
+  assert.equal(parseActivityWindow(null), '7d');
+  assert.equal(parseActivityWindow('invalid'), '7d');
+  assert.equal(parseActivityWindow('30d'), '30d');
+  assert.equal(parseActivityWindow('all'), 'all');
+});
 
 const owner = {
   login: 'gauchitodev',

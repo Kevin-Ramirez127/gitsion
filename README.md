@@ -34,11 +34,11 @@ limit. Private repositories are never tracked.
 - Project-oriented feed by default, grouping activity by repository; switch to a person-oriented view that groups the same activity by actor.
 - Project groups collapse automatically: a project with no activity today shows only its newest activity, and any project with more than five activities shows the five newest. “Show more” expands the rest in place.
 - Always-visible search bar that matches project names, owners and cached contributors. Search combines with the feed filters and updates the dashboard in place.
-- Compact activity ranking of the top five repositories, with proportional bars and exact repository filters. Counts use the complete filtered feed before its display limit.
+- Compact ranking of captured activity, with proportional bars and exact repository filters. Rolling 7-day (default), 30-day and all-captured views apply to both the feed and ranking, before the display limit.
 - Feed filters for activity type and issue labels, plus an owner filter. Both sections start collapsed and remember their open state across in-place updates. Links carry the active filters so they can be combined.
 - Repository detail page with the latest PR (open/merged/closed), up to 10 tags, open issues with labels, owner card and repository facts.
-- Background sync every 15 minutes with a token, 30 minutes without one. Manual per-repository refresh and “Sync all”.
-- Failed GitHub syncs keep the previous good snapshot and show the error instead of blanking data.
+- Background visibility checks every 15 minutes with a token, 30 minutes without one. Inactive repositories fetch full snapshots less often; manual refresh and “Sync all” bypass that schedule.
+- Temporary GitHub failures keep the previous good snapshot. A repository-level `404` or non-public visibility hides it until a successful public refresh; hidden records are rechecked automatically.
 - Empty, stale, 404 and backend-unreachable states are handled in the UI.
 - Search-engine ready: canonical URLs, Open Graph, Twitter Cards and JSON-LD generated with [easeo](https://github.com/emiliano-go/easeo), plus dynamic `robots.txt` and `sitemap.xml` covering every tracked repository.
 - Bulk-import every repository from a GitHub organization/user profile, or from a JSON list, with the interactive `./import` script.
@@ -58,6 +58,7 @@ Inside a group, activities stay newest-first. The same filters work in both view
 | --- | --- | --- |
 | Search | `?q=astro` | Matches repository name, owner or a cached contributor login. Space-separated terms must all match. |
 | Owner | `?owner=acme` | Limits the feed and stats to one tracked owner. |
+| Period | `?period=7d`, `?period=30d`, `?period=all` | Rolling 7-day (default) or 30-day window, or all captured items. Applies to the feed, activity count and ranking; open-issue and open-PR cards still describe current cached state. Invalid values use 7 days. |
 | Repository | `?repo=acme/project` | Limits the feed and stats to that exact repository, case-insensitively. Click a ranking bar to select it; click again or use “Clear repository filter” to remove it. |
 | Activity type | `?kind=push`, `?kind=pull`, `?kind=issue` | Repeat the parameter to select several kinds; omit it for all. |
 | Issue label | `?label=bug` | Keeps only issue activities carrying any selected label. |
@@ -73,6 +74,11 @@ The activity ranking sits between the summary cards and feed controls. It follow
 search, owner, activity-type and label filters, and keeps the other matching
 repositories visible when one is selected. Its counts describe the activity
 currently available in cached snapshots rather than a complete event history.
+Counts combine push events with the latest state of each pull request or open
+issue. They do not measure productivity. A time window filters the timestamps of
+captured items; it cannot recover events that have already left GitHub's bounded
+activity page or a previous snapshot. Historical completeness would require a
+separate event store with deduplication and explicit collection coverage.
 
 ## SEO and indexing
 
@@ -255,9 +261,30 @@ changes only dark mode.
 A snapshot costs **at least 7 requests** (repository, pull requests, tags, open
 issues, closed issues, top contributors and repository activity). Issue pages
 also contain PRs, so the client reads additional pages until it has 100 actual
-issues per state or reaches the end. Without a token GitHub allows 60 requests/hour, so the backend
-defaults to a 30-minute cadence and warns at startup. That comfortably covers a handful of
-public repositories. Add `GITHUB_TOKEN` for more repositories or a faster cadence.
+issues per state or reaches the end. Each background sweep first verifies
+repository visibility: a repository whose full snapshot is not due costs one
+metadata request. A newly observed push triggers an immediate full refresh
+(one extra metadata request in that case). Full snapshots use 2x, 4x or 8x the
+base interval after 1, 7 or 30 days without captured activity. Repositories with
+no activity timestamps use 8x. Visibility checks keep the base cadence, including
+for hidden records, so reduced polling does not delay privacy checks.
+
+Without a token GitHub allows 60 requests/hour per IP. The 30-minute base cadence
+only suits small instances; even metadata-only sweeps of 114 repositories would
+cost 228 requests/hour. A PAT normally shares its user's 5,000 requests/hour
+budget with other applications. For 114 active repositories and a 15-minute
+interval, the minimum is `114 × 7 × 4 = 3,192 requests/hour`, before additional
+pagination, manual refreshes and tracking. These are estimates, not deployment
+measurements.
+
+Sync completion logs include `duration`, `forced`, `synced`,
+`github_requests_total` (HTTP attempts since process start), and, when GitHub
+provides quota headers, `github_rate_limit`, `github_rate_remaining` and
+`github_rate_reset`. Background `synced` includes successful metadata-only checks.
+Use these logs to measure real consumption and remaining headroom. The client
+reserves known remaining quota across concurrent requests and stops outbound
+requests until reset when it is exhausted. Primary and secondary rate-limit
+responses honor `Retry-After`/`X-RateLimit-Reset`, with a one-minute fallback.
 
 ## Bulk import
 
@@ -340,7 +367,7 @@ Errors use a consistent envelope:
 
 - **Public read, admin write.** No login is required to view the feed. `ADMIN_TOKEN` enables `/admin`, and the backend checks the same token on every mutation.
 - **Read-only without a token.** If `ADMIN_TOKEN` is empty, the UI hides management controls and the API returns `403 writes_disabled`.
-- **Only public repositories.** Tracking and refreshing reject repositories whose GitHub visibility is not `public`. Any private records left in an older database are hidden from the API and skipped by background sync.
+- **Only public repositories.** GitHub metadata is checked before any collections are fetched. Non-public visibility or a `404` from the repository metadata endpoint hides cached data from list, detail and owner reads. A `404` from a collection does not prove the repository is unavailable. Hidden and legacy non-public records are rechecked for recovery, without storing new non-public snapshots.
 - **Token handling.** The browser submits the token once to the Astro server, which sets an `HttpOnly`, `SameSite=Strict`, 12-hour signed cookie. The token is never rendered into HTML or exposed to client-side JavaScript.
 - **Put the frontend behind HTTPS** in production. The admin cookie uses `Secure` when the request arrives over HTTPS or `X-Forwarded-Proto: https`.
 - **Keep the backend private.** Docker Compose binds it to `127.0.0.1:8080`; only the frontend should be reachable from the network.
@@ -349,10 +376,10 @@ Errors use a consistent envelope:
 ## How syncing works
 
 - Tracking validates the repository against GitHub, rejects non-public repositories, and stores the first snapshot immediately.
-- A tracker goroutine syncs every tracked repository on the configured interval. Concurrent refreshes of the same repo are collapsed with `singleflight`.
+- A tracker goroutine checks every tracked repository on the configured interval. Persisted `next_sync_at` schedules full snapshots adaptively; cheap metadata checks continue on each sweep. A changed push timestamp or newly restored public visibility triggers a full refresh. Manual refresh and “Sync all” always request full snapshots. Concurrent checks and refreshes of the same repo are collapsed with `singleflight`.
 - Each snapshot stores repository metadata, up to 100 pull requests (open and closed/merged), the latest updated PR, up to 10 tags, up to 100 open and 100 closed issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
-- If a sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
-- If a sync explicitly reports non-public visibility, the cached record is marked non-public and hidden from all public API reads. The new non-public snapshot is never stored.
+- If a temporary sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
+- If repository metadata reports non-public visibility or a `404`, the cached record is quarantined with a persisted `hidden` flag. A `404` means unavailable, not confirmed private. Hidden records remain eligible for automatic checks; only a complete successful public snapshot clears quarantine. The previous good data and tracking date are preserved. New non-public collections are never fetched or stored.
 - MongoDB has a unique index on the normalized `owner/name`, so case variants cannot be tracked twice.
 
 ## Project layout
@@ -377,6 +404,13 @@ docker-compose.yml
 ```
 
 ## Testing
+
+The [CI workflow](.github/workflows/ci.yml) runs on pull requests, pushes to
+`main` and manual dispatch. It checks Go formatting, vet, unit tests with the
+race detector and MongoDB-backed integration tests, plus frontend unit tests,
+Astro type checks, the production Cloudflare build and Node SSR integration
+tests. It uses read-only repository permissions and requires no application
+secrets or live GitHub data.
 
 ```bash
 make test
@@ -404,8 +438,8 @@ MONGODB_TEST_URI=mongodb://localhost:27017 \
 - **Private repositories are not supported.** A `GITHUB_TOKEN` can raise the rate limit, but repositories whose visibility is not public are rejected and never shown.
 - Only the repository owner/org and top contributors (up to 100, used for search) are stored; there is no full collaborator or permission model.
 - Tags are the first 10 returned by GitHub's tags endpoint; GitHub does not expose tag dates there.
-- The feed is built from cached snapshots: attributed pushes from the latest 100 repository activity records, all cached pull requests, and cached open issues. Merge actors are available only when their matching activity is still in that window; other unknown actors remain unattributed. It defaults to the latest 100 activities, grouped by project; `?view=user` groups by actor and `?show=all` reveals the full feed.
+- The feed is built from cached snapshots: attributed pushes from the latest 100 repository activity records, all cached pull requests, and cached open issues. Merge actors are available only when their matching activity is still in that window; other unknown actors remain unattributed. It defaults to the last 7 days with a 100-item display cap, grouped by project. `?period=30d` widens the time window, `?period=all` removes it, `?view=user` groups by actor and `?show=all` removes only the display cap.
 - The issues page (`/issues`) lists open and closed issues across tracked repositories. Status and tag filters share one multi-select Tags group: the status tags stay at the start, tag options narrow to the tags still present on the matching issues, and selecting several tags shows only issues that carry all of them. Each section shows ten items before “Show more”; the cache holds up to 100 open and 100 closed issues per repository.
 - The pull request page (`/pulls`) lists open and closed/merged pull requests across tracked repositories, with the same ten-item sections. The cache holds up to 100 pull requests per repository.
 - Issue lists on repository pages show cached open issues; the “open items” metric is GitHub's count and includes pull requests.
-- No webhooks, charts, commit history or multi-user accounts. The API reads cached snapshots; background sync plus manual refresh keeps them current.
+- No webhooks, complete event history or multi-user accounts. The API reads cached snapshots; background sync plus manual refresh keeps them current. A new issue or PR on an otherwise idle repository may take up to 8x the base interval to appear; new pushes are detected on the next metadata check.
