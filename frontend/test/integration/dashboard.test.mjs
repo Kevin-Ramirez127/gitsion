@@ -7,21 +7,23 @@ import { ADMIN_COOKIE, createAdminSession, SESSION_TTL_SECONDS } from '../../src
 
 const token = 'integration-test-token';
 const secret = 'integration-test-secret';
+const fixtureNow = Date.now();
+const daysAgo = days => new Date(fixtureNow - days * 86_400_000).toISOString();
 const user = (login) => ({ login, avatarUrl: `https://avatars.example/${login}`,
   htmlUrl: `https://github.com/${login}`, type: 'User' });
 const newest = {
   number: 3, title: 'Merged by a maintainer', state: 'merged', draft: false,
   author: user('alice'), mergedBy: user('maintainer'), htmlUrl: 'https://github.com/acme/widget/pull/3',
-  createdAt: '2026-02-01T00:00:00Z', updatedAt: '2026-02-04T00:00:00Z',
-  mergedAt: '2026-02-04T00:00:00Z',
+  createdAt: daysAgo(6), updatedAt: daysAgo(3),
+  mergedAt: daysAgo(3),
 };
 const unknown = { ...newest, number: 2, title: 'Merged without a known actor',
   mergedBy: null, htmlUrl: 'https://github.com/acme/widget/pull/2',
-  mergedAt: '2026-02-03T00:00:00Z' };
+  mergedAt: daysAgo(4) };
 const older = { ...newest, number: 1, title: 'Older open PR', state: 'open',
   mergedAt: null, mergedBy: null, author: user('bob'),
   htmlUrl: 'https://github.com/acme/widget/pull/1',
-  updatedAt: '2026-02-01T00:00:00Z' };
+  updatedAt: daysAgo(6) };
 const repo = {
   fullName: 'acme/widget', name: 'widget', owner: user('acme'),
   description: 'Integration fixture', htmlUrl: 'https://github.com/acme/widget',
@@ -209,14 +211,14 @@ test('built dashboard protects mutations and renders cached activity accurately'
 test('repository ranking counts the full feed and filters exact repositories', async (t) => {
   const issue = (number, title, labels) => ({ number, title, labels, state: 'open',
     author: user('reporter'), htmlUrl: `https://github.com/acme/widget/issues/${number}`,
-    createdAt: '2026-02-05T00:00:00Z', updatedAt: '2026-02-05T00:00:00Z', comments: 0 });
+    createdAt: daysAgo(2), updatedAt: daysAgo(2), comments: 0 });
   function fixture(fullName, pushCount, issues = []) {
     const [owner, name] = fullName.split('/');
     return { ...repo, fullName, name, owner: user(owner), htmlUrl: `https://github.com/${fullName}`,
       latestPr: null, pullRequests: [], issues,
       pushes: Array.from({ length: pushCount }, (_, index) => ({
         id: index + 1, actor: user('pusher'), ref: 'refs/heads/main',
-        before: '1'.repeat(40), after: '2'.repeat(40), timestamp: '2026-02-06T00:00:00Z', forced: false,
+        before: '1'.repeat(40), after: '2'.repeat(40), timestamp: daysAgo(1), forced: false,
       })),
     };
   }
@@ -285,7 +287,7 @@ test('repository ranking counts the full feed and filters exact repositories', a
   });
 
   await t.test('ranking links preserve combined filters and select one exact repository', async () => {
-    const home = await page('/?q=widget&owner=acme&view=user&kind=pull&kind=issue&label=bug&show=all');
+    const home = await page('/?q=widget&owner=acme&view=user&period=30d&kind=pull&kind=issue&label=bug&show=all');
     assert.deepEqual(counts(home), [['acme/widget-tools', 2], ['acme/widget', 1]]);
     const target = rankingEntries(home).find(entry => entry.name === 'acme/widget');
     const params = target.href.searchParams;
@@ -293,6 +295,7 @@ test('repository ranking counts the full feed and filters exact repositories', a
     assert.equal(params.get('q'), 'widget');
     assert.equal(params.get('owner'), 'acme');
     assert.equal(params.get('view'), 'user');
+    assert.equal(params.get('period'), '30d');
     assert.equal(params.get('show'), 'all');
     assert.deepEqual(params.getAll('kind'), ['pull', 'issue']);
     assert.deepEqual(params.getAll('label'), ['bug']);
@@ -304,17 +307,20 @@ test('repository ranking counts the full feed and filters exact repositories', a
     assert.ok(rows[0].includes('Widget bug'));
     assert.match(selected, /Repositories\s*<\/div>\s*<div class="stat-value">1<\/div>/);
     assert.ok(selected.includes('name="repo" value="acme/widget"'));
+    assert.ok(selected.includes('name="period" value="30d"'));
     assert.ok(selected.includes('noindex'));
     const active = rankingEntries(selected).find(entry => entry.active);
     assert.equal(active.name, 'acme/widget');
     assert.equal(active.href.searchParams.has('repo'), false);
     assert.equal(active.href.searchParams.get('q'), 'widget');
+    assert.equal(active.href.searchParams.get('period'), '30d');
     assert.deepEqual(active.href.searchParams.getAll('kind'), ['pull', 'issue']);
     assert.deepEqual(counts(await page(active.href)), counts(home));
 
     const projectLink = selected.match(/href="([^\"]+)"[^>]*>\s*By project/);
     assert.ok(projectLink);
     assert.equal(new URL(projectLink[1].replaceAll('&amp;', '&'), app.base).searchParams.get('repo'), 'acme/widget');
+    assert.equal(new URL(projectLink[1].replaceAll('&amp;', '&'), app.base).searchParams.get('period'), '30d');
   });
 
   await t.test('repository selection ignores case and does not match name prefixes', async () => {
@@ -343,6 +349,34 @@ test('repository ranking counts the full feed and filters exact repositories', a
     assert.equal(feedRows(missingRepository).length, 0);
     assert.ok(missingRepository.includes('Selected repository is outside these filters'));
     assert.ok(missingRepository.includes('Clear repository filter'));
+  });
+
+  await t.test('periods keep old snapshots out of recent rankings and offer a wider view', async () => {
+    const previous = fixtures;
+    const historical = (name, count, days) => {
+      const repository = fixture(name, count);
+      repository.pushes = repository.pushes.map(push => ({ ...push, timestamp: daysAgo(days) }));
+      return repository;
+    };
+    fixtures = [historical('acme/ancient', 100, 45), historical('acme/monthly', 3, 14),
+      historical('acme/current', 2, 1)];
+    try {
+      assert.deepEqual(counts(await page()), [['acme/current', 2]]);
+      assert.deepEqual(counts(await page('/?period=30d')), [['acme/monthly', 3], ['acme/current', 2]]);
+      assert.deepEqual(counts(await page('/?period=all')), [['acme/ancient', 100], ['acme/monthly', 3], ['acme/current', 2]]);
+      assert.deepEqual(counts(await page('/?period=invalid')), [['acme/current', 2]]);
+      const emptyPeriod = await page('/?q=ancient');
+      assert.ok(emptyPeriod.includes('No captured activity in this period'));
+      const widerView = emptyPeriod.match(/href="([^\"]+)"[^>]*>Show all captured activity/);
+      assert.ok(widerView);
+      const destination = new URL(widerView[1].replaceAll('&amp;', '&'), app.base);
+      assert.equal(destination.searchParams.get('q'), 'ancient');
+      assert.equal(destination.searchParams.get('period'), 'all');
+      assert.deepEqual(counts(await page(destination)), [['acme/ancient', 100]]);
+      assert.ok((await page()).includes('counts do not measure productivity'));
+    } finally {
+      fixtures = previous;
+    }
   });
 
   await t.test('an empty instance omits the chart', async () => {

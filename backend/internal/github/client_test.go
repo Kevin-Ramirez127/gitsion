@@ -226,7 +226,7 @@ func TestFetchSnapshot(t *testing.T) {
 func TestFetchSnapshotEmptyCollections(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/repos/acme/empty", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"name":"empty","full_name":"acme/empty","owner":{"login":"acme"},"default_branch":"main"}`))
+		_, _ = w.Write([]byte(`{"name":"empty","full_name":"acme/empty","owner":{"login":"acme"},"default_branch":"main","visibility":"public"}`))
 	})
 	mux.HandleFunc("/repos/acme/empty/pulls", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })
 	mux.HandleFunc("/repos/acme/empty/tags", func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`[]`)) })

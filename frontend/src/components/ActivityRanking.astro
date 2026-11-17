@@ -17,7 +17,7 @@ const maximum = entries[0]?.count ?? 1;
 {(entries.length > 0 || selectedRepository) && (
   <section class="activity-ranking" aria-labelledby="activity-ranking-title">
     <header class="section-head">
-      <h2 class="section-title" id="activity-ranking-title">Activity by repository</h2>
+      <h2 class="section-title" id="activity-ranking-title">Captured activity by repository</h2>
       <span class="section-note">
         {ranking.length > 5 ? `Top 5 of ${plainNumber(ranking.length)} repositories` : 'Captured activities'}
       </span>
@@ -54,7 +54,7 @@ const maximum = entries[0]?.count ?? 1;
         <a href={clearHref}>Clear repository filter</a>
       </p>
     )}
-    <p class="ranking-caption">Counts reflect the activity currently available in the feed. Select a repository to filter it.</p>
+    <p class="ranking-caption">Counts combine captured pushes with the latest state of each pull request or open issue in the selected period. Coverage may be incomplete; counts do not measure productivity. Select a repository to filter the feed.</p>
   </section>
 )}
 

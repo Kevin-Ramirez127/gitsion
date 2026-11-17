@@ -7,7 +7,7 @@ import Flash from '../components/Flash.astro';
 import Icon from '../components/Icon.astro';
 import OwnerChips from '../components/OwnerChips.astro';
 import StatCard from '../components/StatCard.astro';
-import { buildActivityFeed, rankRepositoryActivity, FEED_PAGE_SIZE, type ActivityKind, type FeedView } from '../lib/activity';
+import { buildActivityFeed, filterActivityWindow, parseActivityWindow, rankRepositoryActivity, FEED_PAGE_SIZE, type ActivityKind, type ActivityWindow, type FeedView } from '../lib/activity';
 import { ApiError, listOwners, listRepositories } from '../lib/backend';
 import { hasOpenPullRequest, isOpenIssue } from '../lib/collections';
 import { getHeroCopy, getSiteConfig } from '../lib/config';
@@ -25,6 +25,12 @@ const okMessage = searchParams.get('ok');
 const errorMessage = searchParams.get('error');
 const showAll = searchParams.get('show') === 'all';
 const view: FeedView = searchParams.get('view') === 'user' ? 'user' : 'project';
+const period = parseActivityWindow(searchParams.get('period'));
+const periodOptions: { value: ActivityWindow; label: string }[] = [
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: 'all', label: 'All captured' },
+];
 
 const validKinds: ActivityKind[] = ['push', 'pull', 'issue'];
 const selectedKinds = new Set<ActivityKind>(
@@ -88,7 +94,7 @@ const activeOwner =
   ownerFilter;
 const totalTracked = owners.reduce((total, owner) => total + owner.repoCount, 0);
 
-const sourceActivities = buildActivityFeed(matchingRepos);
+const sourceActivities = filterActivityWindow(buildActivityFeed(matchingRepos), period);
 const allActivities = repositoryFilter
   ? sourceActivities.filter((activity) => activity.repo.fullName.toLowerCase() === repositoryKey)
   : sourceActivities;
@@ -163,6 +169,7 @@ interface FeedQuery {
   repo: string;
   q: string;
   view: FeedView;
+  period: ActivityWindow;
   kinds: ActivityKind[];
   labels: string[];
   showAll: boolean;
@@ -173,6 +180,7 @@ function feedQuery(overrides: Partial<FeedQuery> = {}): string {
   const repo = overrides.repo ?? repositoryFilter;
   const q = overrides.q ?? query;
   const nextView = overrides.view ?? view;
+  const nextPeriod = overrides.period ?? period;
   const kinds = overrides.kinds ?? [...selectedKinds];
   const labels = overrides.labels ?? [...selectedLabels];
   const all = overrides.showAll ?? showAll;
@@ -182,6 +190,7 @@ function feedQuery(overrides: Partial<FeedQuery> = {}): string {
   if (repo) params.set('repo', repo);
   if (q) params.set('q', q);
   if (nextView === 'user') params.set('view', 'user');
+  if (nextPeriod !== '7d') params.set('period', nextPeriod);
   for (const kind of kinds) params.append('kind', kind);
   for (const label of labels) params.append('label', label);
   if (all) params.set('show', 'all');
@@ -284,6 +293,7 @@ function labelHref(label: string): string {
     {ownerFilter && <input type="hidden" name="owner" value={ownerFilter} />}
     {repositoryFilter && <input type="hidden" name="repo" value={repositoryFilter} />}
     {view === 'user' && <input type="hidden" name="view" value="user" />}
+    {period !== '7d' && <input type="hidden" name="period" value={period} />}
     {[...selectedKinds].map((kind) => <input type="hidden" name="kind" value={kind} />)}
     {[...selectedLabels].map((label) => <input type="hidden" name="label" value={label} />)}
     {showAll && <input type="hidden" name="show" value="all" />}
@@ -327,6 +337,21 @@ function labelHref(label: string): string {
       href="/pulls"
     />
   </section>
+
+  {repos.length > 0 && (
+    <nav class="activity-period filter-row" aria-label="Activity period">
+      <span class="filter-label">Period</span>
+      {periodOptions.map((option) => (
+        <a
+          class:list={['filter-chip', { 'is-active': period === option.value }]}
+          href={feedQuery({ period: option.value })}
+          aria-current={period === option.value ? 'true' : undefined}
+        >
+          {option.label}
+        </a>
+      ))}
+    </nav>
+  )}
 
   <ActivityRanking
     ranking={repositoryRanking}
@@ -474,6 +499,14 @@ function labelHref(label: string): string {
     >
       <a class="btn" href={feedQuery({ q: '' })}>Clear search</a>
     </EmptyState>
+  ) : repos.length > 0 && period !== 'all' ? (
+    <EmptyState
+      title="No captured activity in this period"
+      text="Try a longer period or explore all captured activity. Older activity may no longer be available."
+      icon="clock"
+    >
+      <a class="btn" href={feedQuery({ period: 'all' })}>Show all captured activity</a>
+    </EmptyState>
   ) : repos.length > 0 ? (
     <EmptyState
       title="No activity captured yet"
@@ -515,3 +548,9 @@ function labelHref(label: string): string {
 
   <script src="/feed.js" defer></script>
 </Layout>
+
+<style>
+  .activity-period {
+    margin-bottom: 24px;
+  }
+</style>

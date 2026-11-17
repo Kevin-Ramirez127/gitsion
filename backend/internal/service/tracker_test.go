@@ -445,10 +445,11 @@ func (s *fakeStore) Delete(ctx context.Context, owner, name string) (bool, error
 func (s *fakeStore) Ping(ctx context.Context) error { return s.pingErr }
 
 type fakeGitHub struct {
-	mu       sync.Mutex
-	snapshot *model.Repository
-	err      error
-	calls    int
+	mu            sync.Mutex
+	snapshot      *model.Repository
+	err           error
+	calls         int
+	metadataCalls int
 }
 
 func newFakeGitHub() *fakeGitHub {
@@ -480,6 +481,20 @@ func (f *fakeGitHub) setError(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.err = err
+}
+
+func (f *fakeGitHub) FetchRepository(ctx context.Context, owner, name string) (*model.Repository, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.metadataCalls++
+	if f.err != nil {
+		return nil, f.err
+	}
+	repo := cloneRepo(f.snapshot)
+	repo.FullName = owner + "/" + name
+	repo.Name = name
+	repo.Owner = model.Owner{Login: owner, LoginKey: strings.ToLower(owner)}
+	return repo, nil
 }
 
 func (f *fakeGitHub) callCount() int {

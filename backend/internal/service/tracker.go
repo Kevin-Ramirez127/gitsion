@@ -106,7 +106,7 @@ func (t *Tracker) Start(ctx context.Context) {
 		case <-timer.C:
 		}
 
-		t.syncAllLogged(ctx)
+		t.syncAllLogged(ctx, false)
 
 		ticker := time.NewTicker(t.syncInterval)
 		defer ticker.Stop()
@@ -116,19 +116,29 @@ func (t *Tracker) Start(ctx context.Context) {
 				t.log.Info("background sync stopped")
 				return
 			case <-ticker.C:
-				t.syncAllLogged(ctx)
+				t.syncAllLogged(ctx, false)
 			}
 		}
 	}()
 }
 
-func (t *Tracker) syncAllLogged(ctx context.Context) {
-	n, err := t.SyncAll(ctx)
+func (t *Tracker) syncAllLogged(ctx context.Context, force bool) {
+	started := time.Now()
+	n, err := t.syncAll(ctx, force)
+	attrs := []any{"synced", n, "duration", time.Since(started), "forced", force}
+	if client, ok := t.github.(interface{ Usage() github.Usage }); ok {
+		usage := client.Usage()
+		attrs = append(attrs, "github_requests_total", usage.Requests)
+		if usage.RateLimitKnown {
+			attrs = append(attrs, "github_rate_limit", usage.Limit,
+				"github_rate_remaining", usage.Remaining, "github_rate_reset", usage.ResetAt)
+		}
+	}
 	if err != nil {
-		t.log.Warn("background sync finished with errors", "synced", n, "error", err)
+		t.log.Warn("repository sync finished with errors", append(attrs, "error", err)...)
 		return
 	}
-	t.log.Info("background sync finished", "synced", n)
+	t.log.Info("repository sync finished", attrs...)
 }
 
 // List returns tracked repositories, optionally filtered by owner.
@@ -226,6 +236,7 @@ func (t *Tracker) Track(ctx context.Context, input string) (*model.Repository, e
 	snapshot.LastSyncedAt = now
 	snapshot.LastSyncAttempt = now
 	snapshot.SyncError = ""
+	snapshot.NextSyncAt = t.nextSnapshotAt(snapshot, now)
 
 	if err := t.store.Create(ctx, snapshot); err != nil {
 		if errors.Is(err, store.ErrDuplicate) {
@@ -271,7 +282,7 @@ func (t *Tracker) Refresh(ctx context.Context, owner, name string) (*model.Repos
 	t.lastManual[key] = now
 	t.mu.Unlock()
 
-	repo, err := t.syncRepo(ctx, owner, name)
+	repo, err := t.syncRepo(ctx, owner, name, true)
 	if err != nil {
 		return nil, mapGitHubError(err)
 	}
@@ -295,13 +306,19 @@ func (t *Tracker) TriggerSyncAll() error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), syncTimeout)
 		defer cancel()
-		t.syncAllLogged(ctx)
+		t.syncAllLogged(ctx, true)
 	}()
 	return nil
 }
 
 // SyncAll refreshes every tracked repository using a small worker pool.
 func (t *Tracker) SyncAll(ctx context.Context) (int, error) {
+	return t.syncAll(ctx, true)
+}
+
+// Background sweeps check visibility on every pass, while inactive repositories
+// fetch their full collections less often. Manual sync always fetches everything.
+func (t *Tracker) syncAll(ctx context.Context, force bool) (int, error) {
 	repos, err := t.store.List(ctx, "")
 	if err != nil {
 		return 0, err
@@ -319,18 +336,19 @@ func (t *Tracker) SyncAll(ctx context.Context) (int, error) {
 		if ctx.Err() != nil {
 			break
 		}
-		if !isPublicRepository(repo) {
-			t.log.Debug("skipping non-public repository", "repo", repo.FullName)
-			continue
-		}
 		repo := repo
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			wg.Wait()
+			return synced, errors.Join(append(errList, ctx.Err())...)
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			if _, err := t.syncRepo(ctx, repo.Owner.Login, repo.Name); err != nil {
+			if _, err := t.syncRepo(ctx, repo.Owner.Login, repo.Name, force); err != nil {
 				t.log.Warn("sync failed", "repo", repo.FullName, "error", err)
 				mu.Lock()
 				errList = append(errList, fmt.Errorf("%s: %w", repo.FullName, err))
@@ -344,12 +362,19 @@ func (t *Tracker) SyncAll(ctx context.Context) (int, error) {
 	}
 	wg.Wait()
 
-	return synced, errors.Join(errList...)
+	return synced, errors.Join(append(errList, ctx.Err())...)
+}
+
+type syncResult struct {
+	repo         *model.Repository
+	metadataOnly bool
 }
 
 // syncRepo refreshes a single repository. singleflight collapses concurrent
 // refreshes of the same repository into one GitHub request set.
-func (t *Tracker) syncRepo(ctx context.Context, owner, name string) (*model.Repository, error) {
+func (t *Tracker) syncRepo(ctx context.Context, owner, name string, force bool) (*model.Repository, error) {
+	// Serialize metadata and full refreshes together so an older public result
+	// cannot overwrite a concurrent decision to quarantine the repository.
 	value, err, _ := t.group.Do("sync:"+repoKey(owner, name), func() (any, error) {
 		existing, err := t.store.Get(ctx, owner, name)
 		if errors.Is(err, store.ErrNotFound) {
@@ -359,22 +384,50 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string) (*model.Repo
 			return nil, err
 		}
 
-		snapshot, fetchErr := t.github.FetchSnapshot(ctx, owner, name)
+		var snapshot *model.Repository
+		var fetchErr error
+		metadataOnly := false
+		if !force && time.Now().Before(existing.NextSyncAt) {
+			if client, ok := t.github.(interface {
+				FetchRepository(context.Context, string, string) (*model.Repository, error)
+			}); ok {
+				snapshot, fetchErr = client.FetchRepository(ctx, owner, name)
+				metadataOnly = true
+			}
+		}
+		if !metadataOnly || (fetchErr == nil && isPublicRepository(*snapshot) &&
+			(!isPublicRepository(*existing) || !snapshot.PushedAt.Equal(existing.PushedAt))) {
+			snapshot, fetchErr = t.github.FetchSnapshot(ctx, owner, name)
+			metadataOnly = false
+		}
 		if fetchErr == nil && !isPublicRepository(*snapshot) {
 			// Hide the previous public snapshot using the newly observed visibility.
 			existing.Visibility = snapshot.Visibility
+			existing.Hidden = true
 			fetchErr = ErrPrivateRepo
 		}
 		if fetchErr != nil {
+			if errors.Is(fetchErr, github.ErrRepositoryUnavailable) {
+				existing.Hidden = true
+			}
 			// Keep the last good snapshot, but surface the failure in the UI.
 			existing.LastSyncAttempt = time.Now().UTC()
+			existing.NextSyncAt = existing.LastSyncAttempt.Add(t.syncInterval)
+			var limited *github.RateLimitError
+			if errors.As(fetchErr, &limited) && limited.ResetAt.After(existing.NextSyncAt) {
+				existing.NextSyncAt = limited.ResetAt
+			}
 			existing.SyncError = truncate(fetchErr.Error(), maxSyncErrorLen)
 			persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 			defer cancel()
 			if saveErr := t.store.ReplaceSnapshot(persistCtx, existing); saveErr != nil {
 				t.log.Warn("could not persist sync error", "repo", existing.FullName, "error", saveErr)
+				return nil, errors.Join(fetchErr, saveErr)
 			}
 			return nil, fetchErr
+		}
+		if metadataOnly {
+			return syncResult{repo: existing, metadataOnly: true}, nil
 		}
 
 		now := time.Now().UTC()
@@ -382,19 +435,26 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string) (*model.Repo
 		snapshot.LastSyncAttempt = now
 		snapshot.LastSyncedAt = now
 		snapshot.SyncError = ""
+		snapshot.Hidden = false
+		snapshot.NextSyncAt = t.nextSnapshotAt(snapshot, now)
 		if err := t.store.ReplaceSnapshot(ctx, snapshot); err != nil {
 			return nil, err
 		}
-		return snapshot, nil
+		return syncResult{repo: snapshot}, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	repo, ok := value.(*model.Repository)
+	result, ok := value.(syncResult)
 	if !ok {
 		return nil, fmt.Errorf("internal: unexpected sync result type %T", value)
 	}
-	return repo, nil
+	if force && result.metadataOnly {
+		// A manual request may have joined a cheap background check. Fetch the
+		// full snapshot now that that check has completed.
+		return t.syncRepo(ctx, owner, name, true)
+	}
+	return result.repo, nil
 }
 
 // Health checks MongoDB connectivity.
@@ -453,7 +513,7 @@ func validPathPart(part string) bool {
 
 func mapGitHubError(err error) error {
 	if errors.Is(err, github.ErrNotFound) {
-		return fmt.Errorf("%w: %v", ErrRepoNotFound, err)
+		return fmt.Errorf("%w: %w", ErrRepoNotFound, err)
 	}
 	return err
 }
@@ -466,7 +526,55 @@ func repoKey(owner, name string) string {
 // dashboard exposes repository metadata to everyone, so only data GitHub
 // explicitly marks as public may be stored or shown.
 func isPublicRepository(repo model.Repository) bool {
-	return strings.EqualFold(strings.TrimSpace(repo.Visibility), "public")
+	return !repo.Hidden && strings.EqualFold(strings.TrimSpace(repo.Visibility), "public")
+}
+
+func (t *Tracker) nextSnapshotAt(repo *model.Repository, now time.Time) time.Time {
+	// Align deadlines to the base interval so time spent fetching a snapshot
+	// does not make the next tick miss its deadline and double the cadence.
+	return now.Truncate(t.syncInterval).Add(t.snapshotInterval(repo, now))
+}
+
+// Full snapshots back off by 2x, 4x and 8x after one, seven and thirty days
+// without captured activity. Metadata checks keep the normal privacy cadence.
+func (t *Tracker) snapshotInterval(repo *model.Repository, now time.Time) time.Duration {
+	latest := repo.PushedAt
+	observe := func(at time.Time) {
+		if at.After(latest) {
+			latest = at
+		}
+	}
+	for _, push := range repo.Pushes {
+		observe(push.Timestamp)
+	}
+	for _, pr := range repo.PullRequests {
+		observe(pr.CreatedAt)
+		observe(pr.UpdatedAt)
+		if pr.MergedAt != nil {
+			observe(*pr.MergedAt)
+		}
+		if pr.ClosedAt != nil {
+			observe(*pr.ClosedAt)
+		}
+	}
+	for _, issue := range repo.Issues {
+		observe(issue.CreatedAt)
+		observe(issue.UpdatedAt)
+		if issue.ClosedAt != nil {
+			observe(*issue.ClosedAt)
+		}
+	}
+	age := now.Sub(latest)
+	switch {
+	case latest.IsZero() || age >= 30*24*time.Hour:
+		return 8 * t.syncInterval
+	case age >= 7*24*time.Hour:
+		return 4 * t.syncInterval
+	case age >= 24*time.Hour:
+		return 2 * t.syncInterval
+	default:
+		return t.syncInterval
+	}
 }
 
 func truncate(s string, max int) string {
