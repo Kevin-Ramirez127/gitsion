@@ -15,52 +15,59 @@ const maximum = entries[0]?.count ?? 1;
 ---
 
 {(entries.length > 0 || selectedRepository) && (
-  <section class="activity-ranking" aria-labelledby="activity-ranking-title">
-    <header class="section-head">
-      <h2 class="section-title" id="activity-ranking-title">Captured activity by repository</h2>
-      <span class="section-note">
-        {ranking.length > 5 ? `Top 5 of ${plainNumber(ranking.length)} repositories` : 'Captured activities'}
+  <details class="filter-section activity-ranking" data-collapsible="ranking">
+    <summary class="filter-summary">
+      <span class="filter-summary-title" id="activity-ranking-title">Captured activity by repository</span>
+      <span class="filter-summary-note">
+        {selectedRepository
+          ? `Filtered: ${selectedRepository}`
+          : ranking.length > 5
+            ? `Top 5 of ${plainNumber(ranking.length)} repositories`
+            : 'Captured activities'}
       </span>
-    </header>
+      <span class="filter-toggle" aria-hidden="true"></span>
+    </summary>
 
-    {entries.length > 0 && (
-      <ol class="activity-ranking-list">
-        {entries.map((entry, index) => {
-          const selected = entry.fullName.toLowerCase() === selectedRepository.toLowerCase();
-          return (
-            <li>
-              <a
-                class:list={['activity-ranking-link', { 'is-active': selected }]}
-                href={hrefFor(entry.fullName)}
-                aria-current={selected ? 'true' : undefined}
-                aria-label={`${selected ? 'Clear filter for' : 'Filter feed by'} ${entry.fullName}, ${plainNumber(entry.count)} captured ${plural(entry.count, 'activity', 'activities')}`}
-              >
-                <span class="ranking-position" aria-hidden="true">{index + 1}</span>
-                <span class="ranking-repository">{entry.fullName}</span>
-                <span class="ranking-track" aria-hidden="true">
-                  <span class="ranking-bar" style={`width: ${(entry.count / maximum) * 100}%`}></span>
-                </span>
-                <span class="ranking-value" aria-hidden="true">{plainNumber(entry.count)}</span>
-              </a>
-            </li>
-          );
-        })}
-      </ol>
-    )}
+    <div class="activity-ranking-body">
+      {entries.length > 0 && (
+        <ol class="activity-ranking-list">
+          {entries.map((entry, index) => {
+            const selected = entry.fullName.toLowerCase() === selectedRepository.toLowerCase();
+            return (
+              <li>
+                <a
+                  class:list={['activity-ranking-link', { 'is-active': selected }]}
+                  href={hrefFor(entry.fullName)}
+                  aria-current={selected ? 'true' : undefined}
+                  aria-label={`${selected ? 'Clear filter for' : 'Filter feed by'} ${entry.fullName}, ${plainNumber(entry.count)} captured ${plural(entry.count, 'activity', 'activities')}`}
+                >
+                  <span class="ranking-position" aria-hidden="true">{index + 1}</span>
+                  <span class="ranking-repository">{entry.fullName}</span>
+                  <span class="ranking-track" aria-hidden="true">
+                    <span class="ranking-bar" style={`width: ${(entry.count / maximum) * 100}%`}></span>
+                  </span>
+                  <span class="ranking-value" aria-hidden="true">{plainNumber(entry.count)}</span>
+                </a>
+              </li>
+            );
+          })}
+        </ol>
+      )}
 
-    {selectedRepository && (
-      <p class="ranking-selection">
-        <span>Showing <strong>{selectedRepository}</strong></span>
-        <a href={clearHref}>Clear repository filter</a>
-      </p>
-    )}
-    <p class="ranking-caption">Counts combine captured pushes with the latest state of each pull request or open issue in the selected period. Coverage may be incomplete; counts do not measure productivity. Select a repository to filter the feed.</p>
-  </section>
+      {selectedRepository && (
+        <p class="ranking-selection">
+          <span>Showing <strong>{selectedRepository}</strong></span>
+          <a href={clearHref}>Clear repository filter</a>
+        </p>
+      )}
+      <p class="ranking-caption">Counts combine captured pushes with the latest state of each pull request or open issue in the selected period. Coverage may be incomplete; counts do not measure productivity. Select a repository to filter the feed.</p>
+    </div>
+  </details>
 )}
 
 <style>
-  .activity-ranking {
-    margin-bottom: 36px;
+  .activity-ranking-body {
+    padding-bottom: 16px;
   }
 
   .activity-ranking-list {

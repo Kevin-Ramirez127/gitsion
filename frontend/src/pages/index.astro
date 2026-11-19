@@ -353,14 +353,14 @@ function labelHref(label: string): string {
     </nav>
   )}
 
-  <ActivityRanking
-    ranking={repositoryRanking}
-    selectedRepository={activeRepository}
-    hrefFor={(fullName) => feedQuery({ repo: fullName.toLowerCase() === repositoryKey ? '' : fullName })}
-    clearHref={feedQuery({ repo: '' })}
-  />
-
   <div class="feed-controls">
+    <ActivityRanking
+      ranking={repositoryRanking}
+      selectedRepository={activeRepository}
+      hrefFor={(fullName) => feedQuery({ repo: fullName.toLowerCase() === repositoryKey ? '' : fullName })}
+      clearHref={feedQuery({ repo: '' })}
+    />
+
     {owners.length > 0 && (
       <details class="filter-section" data-collapsible="owners">
         <summary class="filter-summary">

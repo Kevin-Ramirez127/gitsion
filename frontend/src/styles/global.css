@@ -737,6 +737,7 @@ h3 {
   border-bottom: 1px solid var(--border);
 }
 
+.filter-section + .filter-section,
 .filter-section + .filters {
   border-top: 0;
 }
