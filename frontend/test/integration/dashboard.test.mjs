@@ -264,7 +264,7 @@ test('repository ranking counts the full feed and filters exact repositories', a
     return response.text();
   }
   function rankingEntries(html) {
-    const section = html.match(/<section\b[^>]*class="activity-ranking"[^>]*>([\s\S]*?)<\/section>/)?.[1] ?? '';
+    const section = html.match(/<details\b[^>]*class="[^"]*\bactivity-ranking\b[^"]*"[^>]*>([\s\S]*?)<\/details>/)?.[1] ?? '';
     return [...section.matchAll(/<a\b[^>]*class="activity-ranking-link[^\"]*"[^>]*>/g)].map(([tag]) => {
       const label = tag.match(/aria-label="(?:Filter feed by|Clear filter for) ([^\"]+), ([\d,]+) captured activit(?:y|ies)"/);
       assert.ok(label, `Missing accessible ranking count: ${tag}`);
