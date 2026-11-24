@@ -41,7 +41,7 @@ limit. Private repositories are never tracked.
 - Temporary GitHub failures keep the previous good snapshot. A repository-level `404` or non-public visibility hides it until a successful public refresh; hidden records are rechecked automatically.
 - Empty, stale, 404 and backend-unreachable states are handled in the UI.
 - Search-engine ready: canonical URLs, Open Graph, Twitter Cards and JSON-LD generated with [easeo](https://github.com/emiliano-go/easeo), plus dynamic `robots.txt` and `sitemap.xml` covering every tracked repository.
-- Bulk-import every repository from a GitHub organization/user profile, or from a JSON list, with the interactive `./import` script.
+- Bulk-import every repository from a GitHub organization/user profile, or from a JSON list, with the interactive `./import` script; `--prune` also untracks what that source does not list.
 
 ## Feed views and filters
 
@@ -141,7 +141,7 @@ make help          # list targets
 make up            # build + start the full stack
 make logs          # follow logs
 make down          # stop the stack
-make test          # Go, frontend unit/SSR tests and Astro type checks
+make test          # Go, importer, frontend unit/SSR tests and Astro type checks
 ```
 
 ## Production: Workers frontend + VPS backend
@@ -300,6 +300,8 @@ be set in the environment or `.env`; private and internal repositories are skipp
 ./import repos.json --all
 ./import --json repos.json --all
 ./import --json '["withastro/astro", "astral-sh/ruff"]' --all
+./import repos.json --prune --dry-run
+./import repos.json --all --prune --yes
 
 # Through make:
 make import ARGS="https://github.com/withastro"
@@ -309,6 +311,22 @@ For a profile, the script first asks whether to import **all** repositories.
 Answer no to choose individual numbers or ranges such as `1,3-5`. Already
 tracked repositories are skipped. `--all` and `--select` make it
 non-interactive; `--dry-run` only shows the table.
+
+`--prune` reconciles in the other direction: after importing, it untracks the
+tracked repositories that the source does not list. It prints them and asks
+before removing anything, and answering no lets you pick individual ones.
+`--yes` skips that question for unattended runs, and `--dry-run` only lists
+them.
+
+- A profile only decides for the repositories it owns, so
+  `./import @withastro --prune` never touches another owner's repositories.
+- A JSON list is taken as the complete set and decides for **every** tracked
+  repository, including the ones that were added by hand.
+- A repository that the list still names by a former name, because it was
+  renamed or transferred on GitHub, is kept.
+- An empty source, or a JSON list with an entry that cannot be read, never
+  prunes.
+- Hidden records are not returned by the API, so `--prune` does not see them.
 
 The script loads `.env` from the current directory or its parent and honors
 `BACKEND_URL`, `ADMIN_TOKEN`, `GITHUB_TOKEN` and `GITHUB_API_URL`. Without a
@@ -400,6 +418,7 @@ frontend/
   src/middleware.ts       session state + security headers (mutation guards live in src/lib/admin.ts)
   public/                 favicon, Open Graph image, confirmation and in-place feed scripts
 import                    interactive bulk importer (Node, no dependencies)
+test/                     importer tests against a fake gitsion and GitHub API
 docker-compose.yml
 ```
 
@@ -408,16 +427,21 @@ docker-compose.yml
 The [CI workflow](.github/workflows/ci.yml) runs on pull requests, pushes to
 `main` and manual dispatch. It checks Go formatting, vet, unit tests with the
 race detector and MongoDB-backed integration tests, plus frontend unit tests,
-Astro type checks, the production Cloudflare build and Node SSR integration
-tests. It uses read-only repository permissions and requires no application
-secrets or live GitHub data.
+Astro type checks, the production Cloudflare build, Node SSR integration
+tests and the importer tests. It uses read-only repository permissions and
+requires no application secrets or live GitHub data.
 
 ```bash
 make test
 # or individually
 cd backend && go test ./...
+node --test test/*.test.mjs
 cd frontend && npm test && npm run check && npm run test:integration
 ```
+
+The importer tests run `./import` against a local server that plays both the
+gitsion API and the GitHub API, and check what `--prune` untracks and what it
+must leave alone.
 
 The frontend integration suite builds with the Node adapter (`ASTRO_ADAPTER=node`)
 and starts the SSR server against a local fake backend. It checks administrative

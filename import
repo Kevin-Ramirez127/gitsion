@@ -3,7 +3,8 @@
 
 // Bulk-import GitHub repositories into gitsion. The script lists a user or
 // organization profile through the GitHub API, then tracks the selected
-// repositories through the existing gitsion backend API.
+// repositories through the existing gitsion backend API. With --prune it also
+// untracks the repositories that the source does not list.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -77,11 +78,18 @@ async function main() {
       'ADMIN_TOKEN is required to import repositories. Set it in the environment or .env.',
     );
   }
+  // Checked up front so a run never imports and then stops short of pruning.
+  if (options.prune && !options.yes && !options.dryRun && !process.stdin.isTTY) {
+    throw new UsageError(
+      'Cannot confirm --prune without a terminal. Use --yes to run non-interactively.',
+    );
+  }
 
   let repos;
   let source;
+  let owner = null;
   if (options.json) {
-    repos = loadReposFromJSON(options.json);
+    repos = loadReposFromJSON(options.json, options.prune);
     source = isInlineJSON(options.json) ? 'inline JSON' : `JSON file ${options.json}`;
   } else {
     if (!config.githubToken) {
@@ -92,13 +100,19 @@ async function main() {
     const profile = await fetchProfile(login, config);
     repos = profile.repos;
     source = `${profile.login} (${profile.type})`;
+    owner = profile.login;
   }
 
   if (repos.length === 0) {
     console.log(`No repositories found in ${source}.`);
+    if (options.prune) {
+      console.log('Nothing pruned: an empty source never untracks repositories.');
+    }
     return 0;
   }
 
+  // Pruning compares against everything the source lists, private or not.
+  const listed = repos;
   const publicRepos = repos.filter(isPublicRepo);
   if (publicRepos.length !== repos.length) {
     const skipped = repos.length - publicRepos.length;
@@ -112,17 +126,30 @@ async function main() {
 
   if (repos.length === 0) {
     console.log('No public repositories to import.');
-    return 0;
+    if (!options.prune) return 0;
   }
 
-  let tracked = new Set();
+  let trackedNames = [];
   try {
-    tracked = await loadTrackedSet(config.backendURL);
+    trackedNames = await loadTrackedNames(config.backendURL);
   } catch (error) {
-    if (!options.dryRun) throw error;
+    if (!options.dryRun || options.prune) throw error;
     console.error(c.dim(`Note: ${error.message} Tracked markers are unavailable.`));
   }
+  const tracked = new Set(trackedNames.map((name) => name.toLowerCase()));
 
+  let code = 0;
+  if (repos.length > 0) {
+    code = await importRepos(repos, source, tracked, options, config);
+  }
+  if (options.prune) {
+    const pruned = await pruneRepos(listed, source, owner, trackedNames, options, config);
+    code = Math.max(code, pruned);
+  }
+  return code;
+}
+
+async function importRepos(repos, source, tracked, options, config) {
   printRepoTable(repos, tracked, source);
 
   if (!options.dryRun && repos.every((repo) => tracked.has(repo.fullName.toLowerCase()))) {
@@ -203,12 +230,124 @@ async function main() {
   return summary.failed > 0 ? 1 : 0;
 }
 
+// Untracks what the source does not list. A profile only decides for the
+// repositories it owns, so pruning one owner never touches another's; a JSON
+// list is the complete set and decides for every tracked repository.
+async function pruneRepos(listed, source, owner, trackedNames, options, config) {
+  const listedKeys = new Set(listed.map((repo) => repo.fullName.toLowerCase()));
+  const prefix = owner ? `${owner.toLowerCase()}/` : '';
+  const inScope = trackedNames.filter((name) => name.toLowerCase().startsWith(prefix));
+  let stale = inScope.filter((name) => !listedKeys.has(name.toLowerCase()));
+  if (stale.length > 0 && !owner) {
+    stale = await dropRenamed(stale, listed, trackedNames, config);
+  }
+
+  const ownedBy = owner ? ` owned by ${owner}` : '';
+  if (stale.length === 0) {
+    console.log(`\nNothing to prune: ${source} lists every tracked repository${ownedBy}.`);
+    return 0;
+  }
+
+  console.log(
+    `\n${c.bold('Prune:')} ${source} does not list ${stale.length} of ${inScope.length} ` +
+      `tracked repositor${inScope.length === 1 ? 'y' : 'ies'}${ownedBy}\n`,
+  );
+  const width = String(stale.length).length;
+  stale.forEach((name, index) => {
+    console.log(`${c.dim(padLeft(String(index + 1), width))}  ${name}`);
+  });
+  console.log('');
+
+  if (options.dryRun) {
+    console.log(
+      `Dry run: would untrack ${stale.length} repositor${stale.length === 1 ? 'y' : 'ies'}.`,
+    );
+    return 0;
+  }
+
+  const selected = options.yes
+    ? stale
+    : await promptSelection(stale, 'Untrack', 'Select repositories to untrack');
+  if (selected.length === 0) {
+    console.log('Nothing untracked.');
+    return 0;
+  }
+
+  const summary = { untracked: 0, failed: 0 };
+  for (let index = 0; index < selected.length; index += 1) {
+    const fullName = selected[index];
+    const label = `[${index + 1}/${selected.length}] ${fullName}`;
+
+    try {
+      await untrackRepository(config.backendURL, fullName, config.adminToken);
+      console.log(`${c.yellow('untrack')} ${label}`);
+      summary.untracked += 1;
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`${c.red('failed')}  ${label}: ${reason}`);
+      summary.failed += 1;
+
+      if (error.code === 'unauthorized' || error.code === 'writes_disabled' || error.network) {
+        console.error('Stopping because the backend cannot continue.');
+        break;
+      }
+    }
+  }
+
+  const parts = [`${summary.untracked} untracked`];
+  if (summary.failed > 0) parts.push(`${summary.failed} failed`);
+  console.log(`\nDone: ${parts.join(', ')}.`);
+  return summary.failed > 0 ? 1 : 0;
+}
+
+// A JSON list may still name a repository by a former name: GitHub redirects
+// it and gitsion tracks the current one. Ask GitHub what every listed
+// repository that is not tracked as written is called now, so that a rename or
+// a transfer is not mistaken for a removal.
+async function dropRenamed(stale, listed, trackedNames, config) {
+  const tracked = new Set(trackedNames.map((name) => name.toLowerCase()));
+  const unmatched = listed.filter((repo) => !tracked.has(repo.fullName.toLowerCase()));
+  if (unmatched.length === 0) return stale;
+
+  console.log(
+    c.dim(
+      `\nChecking ${unmatched.length} listed but untracked ` +
+        `repositor${unmatched.length === 1 ? 'y' : 'ies'} for renames...`,
+    ),
+  );
+  const candidates = new Map(stale.map((name) => [name.toLowerCase(), name]));
+  for (const repo of unmatched) {
+    if (candidates.size === 0) break;
+
+    let current;
+    try {
+      current = await fetchCurrentName(repo, config);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `Could not check whether ${repo.fullName} was renamed, so nothing was pruned. ${reason}`,
+      );
+    }
+
+    const key = current ? current.toLowerCase() : '';
+    if (candidates.has(key)) {
+      console.log(
+        `Keeping ${candidates.get(key)}: it is listed under its former name ${repo.fullName}.`,
+      );
+      candidates.delete(key);
+    }
+  }
+  return [...candidates.values()];
+}
+
 function parseArgs(argv) {
   const options = {
     profile: null,
     json: null,
     all: false,
     select: null,
+    prune: false,
+    yes: false,
     dryRun: false,
     help: false,
   };
@@ -230,6 +369,14 @@ function parseArgs(argv) {
     }
     if (arg === '-n' || arg === '--dry-run') {
       options.dryRun = true;
+      continue;
+    }
+    if (arg === '-p' || arg === '--prune') {
+      options.prune = true;
+      continue;
+    }
+    if (arg === '-y' || arg === '--yes') {
+      options.yes = true;
       continue;
     }
 
@@ -280,6 +427,9 @@ function parseArgs(argv) {
   if (options.all && options.select !== null) {
     throw new UsageError('Use either --all or --select, not both.');
   }
+  if (options.yes && !options.prune) {
+    throw new UsageError('--yes only applies to --prune.');
+  }
   return options;
 }
 
@@ -300,14 +450,20 @@ Options:
   -j, --json <file|json> Read repositories from a JSON file or inline array
   -a, --all              Import every repository without prompting
   -s, --select <list>    Import only these numbers/ranges (for example 1,3-5)
-  -n, --dry-run          Show the repositories without importing them
+  -p, --prune            Also untrack the repositories the source does not list
+  -y, --yes              With --prune, untrack them without asking
+  -n, --dry-run          Show the repositories without importing or untracking them
   -h, --help             Show this help
 
 Environment:
   BACKEND_URL            gitsion API (default: http://localhost:8080)
   GITHUB_TOKEN           Optional token for higher rate limits (private repos are skipped)
   GITHUB_API_URL         GitHub API (default: https://api.github.com)
-  ADMIN_TOKEN            Required to import repositories (gitsion admin token)
+  ADMIN_TOKEN            Required to import or untrack repositories (gitsion admin token)
+
+With --prune, a profile only decides for the repositories it owns, while a JSON
+list is taken as the complete set and decides for every tracked repository. A
+repository the list still names by a former name is kept.
 
 A .env file in the current directory (or its parent) is loaded automatically.
 The JSON input can be an array of repository strings or GitHub-like objects:
@@ -389,9 +545,12 @@ async function fetchProfile(login, config) {
 
 async function fetchAllRepos(basePath, config) {
   const repos = [];
+  // Page through creation order: unlike "updated", a push cannot move a
+  // repository onto a page that was already read, which --prune would take for
+  // a removal. The table still shows the most recently updated first.
   let url =
     `${config.githubApiURL}${basePath}` +
-    '?per_page=100&sort=updated&direction=desc&type=all';
+    '?per_page=100&sort=created&direction=asc&type=all';
 
   while (url) {
     const response = await githubRequest(url, config);
@@ -404,7 +563,23 @@ async function fetchAllRepos(basePath, config) {
     }
     url = nextPageURL(response.link);
   }
-  return repos;
+  const updated = (repo) => Date.parse(repo.updatedAt) || 0;
+  return repos.sort((a, b) => updated(b) - updated(a));
+}
+
+// Returns the name GitHub currently gives a repository, following renames and
+// transfers, or null when GitHub has no such repository.
+async function fetchCurrentName(repo, config) {
+  const route = `/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`;
+  let response;
+  try {
+    response = await githubRequest(`${config.githubApiURL}${route}`, config);
+  } catch (error) {
+    if (error instanceof GitHubError && error.status === 404) return null;
+    throw error;
+  }
+  const name = response.data && response.data.full_name;
+  return typeof name === 'string' ? name : null;
 }
 
 async function githubRequest(url, config) {
@@ -493,7 +668,7 @@ function mapGitHubRepo(raw) {
   };
 }
 
-function loadReposFromJSON(source) {
+function loadReposFromJSON(source, requireComplete = false) {
   const inline = isInlineJSON(source);
   const label = inline ? 'inline JSON' : source;
   let text;
@@ -532,10 +707,12 @@ function loadReposFromJSON(source) {
   const repos = [];
   const seen = new Set();
   const skipped = [];
+  let unreadable = 0;
   list.forEach((entry, index) => {
     const repo = repoFromJSONEntry(entry);
     if (!repo) {
       skipped.push(`#${index + 1} (not a repository)`);
+      unreadable += 1;
       return;
     }
     const key = repo.fullName.toLowerCase();
@@ -555,6 +732,14 @@ function loadReposFromJSON(source) {
   }
   if (repos.length === 0) {
     throw new UsageError(`None of the entries in ${label} could be parsed as repositories.`);
+  }
+  // An entry that cannot be read may be a tracked repository: pruning against
+  // the rest of the list would untrack it.
+  if (requireComplete && unreadable > 0) {
+    throw new UsageError(
+      `--prune needs the complete list, but ${unreadable} entr${unreadable === 1 ? 'y' : 'ies'} ` +
+        `in ${label} could not be read as repositories. Fix or remove them and retry.`,
+    );
   }
   return repos;
 }
@@ -693,57 +878,14 @@ function firstNumber(...values) {
   return null;
 }
 
-async function loadTrackedSet(backendURL) {
+// Calls the gitsion API and returns the decoded body, or throws a BackendError.
+async function backendRequest(backendURL, route, init = {}, timeoutMs = BACKEND_TIMEOUT_MS) {
   let response;
   try {
-    response = await fetch(`${backendURL}/api/v1/repos`, {
-      headers: { Accept: 'application/json' },
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT_MS),
-    });
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new BackendError(
-      `Could not reach the gitsion API at ${backendURL}. Is the backend running? (${reason})`,
-      'network_error',
-      { network: true },
-    );
-  }
-
-  const payload = await readJSON(response);
-  if (!response.ok) {
-    const envelope = payload && payload.error ? payload.error : {};
-    throw new BackendError(
-      envelope.message || `gitsion API returned ${response.status}`,
-      envelope.code || 'unknown_error',
-    );
-  }
-
-  const repositories = payload && Array.isArray(payload.repositories) ? payload.repositories : [];
-  const tracked = new Set();
-  for (const repo of repositories) {
-    const fullName =
-      repo && typeof repo.fullName === 'string'
-        ? repo.fullName
-        : repo && repo.owner && repo.name
-          ? `${repo.owner.login}/${repo.name}`
-          : '';
-    if (fullName) tracked.add(fullName.toLowerCase());
-  }
-  return tracked;
-}
-
-async function trackRepository(backendURL, repo, adminToken) {
-  let response;
-  try {
-    response = await fetch(`${backendURL}/api/v1/repos`, {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        ...(adminToken ? { Authorization: `Bearer ${adminToken}` } : {}),
-      },
-      body: JSON.stringify({ repository: repo.fullName }),
-      signal: AbortSignal.timeout(TRACK_TIMEOUT_MS),
+    response = await fetch(`${backendURL}${route}`, {
+      ...init,
+      headers: { Accept: 'application/json', ...init.headers },
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -761,6 +903,48 @@ async function trackRepository(backendURL, repo, adminToken) {
   throw new BackendError(
     envelope.message || `gitsion API returned ${response.status}`,
     envelope.code || 'unknown_error',
+  );
+}
+
+function adminHeaders(adminToken) {
+  return adminToken ? { Authorization: `Bearer ${adminToken}` } : {};
+}
+
+async function loadTrackedNames(backendURL) {
+  const payload = await backendRequest(backendURL, '/api/v1/repos');
+  const repositories = payload && Array.isArray(payload.repositories) ? payload.repositories : [];
+  const names = [];
+  for (const repo of repositories) {
+    const fullName =
+      repo && typeof repo.fullName === 'string'
+        ? repo.fullName
+        : repo && repo.owner && repo.name
+          ? `${repo.owner.login}/${repo.name}`
+          : '';
+    if (fullName) names.push(fullName);
+  }
+  return names;
+}
+
+async function trackRepository(backendURL, repo, adminToken) {
+  return backendRequest(
+    backendURL,
+    '/api/v1/repos',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...adminHeaders(adminToken) },
+      body: JSON.stringify({ repository: repo.fullName }),
+    },
+    TRACK_TIMEOUT_MS,
+  );
+}
+
+async function untrackRepository(backendURL, fullName, adminToken) {
+  const [owner, name] = fullName.split('/');
+  await backendRequest(
+    backendURL,
+    `/api/v1/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`,
+    { method: 'DELETE', headers: adminHeaders(adminToken) },
   );
 }
 
@@ -871,7 +1055,7 @@ function formatRelative(value) {
   return `${Math.floor(months / 12)}y ago`;
 }
 
-async function promptSelection(repos) {
+async function promptSelection(repos, verb = 'Import', selectPrompt = 'Select repositories') {
   if (!process.stdin.isTTY) {
     throw new UsageError(
       'Cannot prompt without a terminal. Use --all or --select to run non-interactively.',
@@ -880,14 +1064,14 @@ async function promptSelection(repos) {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   try {
-    const importAll = await rl.question(
-      `Import all ${repos.length} repositor${repos.length === 1 ? 'y' : 'ies'}? [y/N] `,
+    const all = await rl.question(
+      `${verb} all ${repos.length} repositor${repos.length === 1 ? 'y' : 'ies'}? [y/N] `,
     );
-    if (/^(?:y|yes)$/i.test(importAll.trim())) return repos;
+    if (/^(?:y|yes)$/i.test(all.trim())) return repos;
 
     while (true) {
       const answer = await rl.question(
-        'Select repositories (numbers/ranges like 1,3-5; "all" or "none"): ',
+        `${selectPrompt} (numbers/ranges like 1,3-5; "all" or "none"): `,
       );
       try {
         return parseSelection(repos, answer);
