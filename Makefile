@@ -33,8 +33,9 @@ build: ## Build backend and frontend locally
 	cd backend && go build ./...
 	cd frontend && npm run build
 
-test: ## Run backend, frontend and SSR tests, then frontend type checks
+test: ## Run backend, importer, frontend and SSR tests, then frontend type checks
 	cd backend && go test ./...
+	node --test test/*.test.mjs
 	cd frontend && npm test
 	cd frontend && npm run check
 	cd frontend && npm run test:integration
