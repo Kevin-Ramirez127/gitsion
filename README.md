@@ -380,6 +380,7 @@ Errors use a consistent envelope:
 - Each snapshot stores repository metadata, up to 100 pull requests (open and closed/merged), the latest updated PR, up to 10 tags, up to 100 open and 100 closed issues (pull requests filtered out) and the top 100 contributors. Open-item count comes from GitHub and includes PRs.
 - If a temporary sync fails, the last successful snapshot remains visible while `syncError` and `lastSyncAttempt` are updated.
 - If repository metadata reports non-public visibility or a `404`, the cached record is quarantined with a persisted `hidden` flag. A `404` means unavailable, not confirmed private. Hidden records remain eligible for automatic checks; only a complete successful public snapshot clears quarantine. The previous good data and tracking date are preserved. New non-public collections are never fetched or stored.
+- GitHub answers a renamed or transferred repository under its new name. The tracked record follows it on the next check, keeping its tracking date; when the new name is already tracked, the record under the old name is dropped as a duplicate.
 - MongoDB has a unique index on the normalized `owner/name`, so case variants cannot be tracked twice.
 
 ## Project layout
