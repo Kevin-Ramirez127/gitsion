@@ -109,11 +109,24 @@ func (s *MongoStore) Create(ctx context.Context, repo *model.Repository) error {
 }
 
 func (s *MongoStore) ReplaceSnapshot(ctx context.Context, repo *model.Repository) error {
+	return s.replace(ctx, strings.ToLower(repo.FullName), repo)
+}
+
+func (s *MongoStore) Rename(ctx context.Context, owner, name string, repo *model.Repository) error {
+	return s.replace(ctx, key(owner, name), repo)
+}
+
+// replace swaps the document stored under storedKey for repo in one step, so a
+// rename can neither lose the repository nor revive one that was just deleted.
+func (s *MongoStore) replace(ctx context.Context, storedKey string, repo *model.Repository) error {
 	repo.FullNameKey = strings.ToLower(repo.FullName)
 	repo.Owner.LoginKey = strings.ToLower(repo.Owner.Login)
 
-	result, err := s.coll.ReplaceOne(ctx, bson.M{"full_name_key": repo.FullNameKey}, repo)
+	result, err := s.coll.ReplaceOne(ctx, bson.M{"full_name_key": storedKey}, repo)
 	if err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return ErrDuplicate
+		}
 		return fmt.Errorf("mongo: replace repository: %w", err)
 	}
 	if result.MatchedCount == 0 {

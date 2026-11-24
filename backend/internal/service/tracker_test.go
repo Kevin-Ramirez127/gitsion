@@ -431,6 +431,22 @@ func (s *fakeStore) ReplaceSnapshot(ctx context.Context, repo *model.Repository)
 	return nil
 }
 
+func (s *fakeStore) Rename(ctx context.Context, owner, name string, repo *model.Repository) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	from, to := repoKey(owner, name), repoKey(repo.Owner.Login, repo.Name)
+	if _, exists := s.repos[from]; !exists {
+		return store.ErrNotFound
+	}
+	if _, exists := s.repos[to]; exists && to != from {
+		return store.ErrDuplicate
+	}
+	delete(s.repos, from)
+	repo.Owner.LoginKey = strings.ToLower(repo.Owner.Login)
+	s.repos[to] = cloneRepo(repo)
+	return nil
+}
+
 func (s *fakeStore) Delete(ctx context.Context, owner, name string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

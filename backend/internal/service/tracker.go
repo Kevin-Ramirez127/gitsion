@@ -396,7 +396,8 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string, force bool) 
 			}
 		}
 		if !metadataOnly || (fetchErr == nil && isPublicRepository(*snapshot) &&
-			(!isPublicRepository(*existing) || !snapshot.PushedAt.Equal(existing.PushedAt))) {
+			(!isPublicRepository(*existing) || !snapshot.PushedAt.Equal(existing.PushedAt) ||
+				renamed(owner, name, snapshot))) {
 			snapshot, fetchErr = t.github.FetchSnapshot(ctx, owner, name)
 			metadataOnly = false
 		}
@@ -437,7 +438,7 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string, force bool) 
 		snapshot.SyncError = ""
 		snapshot.Hidden = false
 		snapshot.NextSyncAt = t.nextSnapshotAt(snapshot, now)
-		if err := t.store.ReplaceSnapshot(ctx, snapshot); err != nil {
+		if err := t.saveSnapshot(ctx, owner, name, snapshot); err != nil {
 			return nil, err
 		}
 		return syncResult{repo: snapshot}, nil
@@ -455,6 +456,36 @@ func (t *Tracker) syncRepo(ctx context.Context, owner, name string, force bool) 
 		return t.syncRepo(ctx, owner, name, true)
 	}
 	return result.repo, nil
+}
+
+// renamed reports whether GitHub answered the repository tracked as owner/name
+// under another name, which it does after a rename or a transfer.
+func renamed(owner, name string, snapshot *model.Repository) bool {
+	return strings.ToLower(strings.TrimSpace(snapshot.FullName)) != repoKey(owner, name)
+}
+
+// saveSnapshot stores a fresh snapshot over the record tracked as owner/name.
+// A renamed repository takes its record along, tracking date included. When
+// its new name is already tracked, the record under the old one is a duplicate.
+func (t *Tracker) saveSnapshot(ctx context.Context, owner, name string, snapshot *model.Repository) error {
+	if !renamed(owner, name, snapshot) {
+		return t.store.ReplaceSnapshot(ctx, snapshot)
+	}
+
+	err := t.store.Rename(ctx, owner, name, snapshot)
+	if errors.Is(err, store.ErrDuplicate) {
+		if _, err := t.store.Delete(ctx, owner, name); err != nil {
+			return err
+		}
+		t.log.Info("duplicate of a renamed repository removed",
+			"from", owner+"/"+name, "to", snapshot.FullName)
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	t.log.Info("repository renamed", "from", owner+"/"+name, "to", snapshot.FullName)
+	return nil
 }
 
 // Health checks MongoDB connectivity.

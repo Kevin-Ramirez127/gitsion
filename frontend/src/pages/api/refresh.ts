@@ -25,8 +25,13 @@ export const POST = requireAdminMutation(async ({ request, redirect }) => {
 
   try {
     const repo = await refreshRepository(owner, name);
+    // A refresh can find the repository renamed on GitHub: land on its new page.
+    const current =
+      validPart.test(repo.owner?.login ?? '') && validPart.test(repo.name ?? '')
+        ? repositoryPath(repo.owner.login, repo.name)
+        : base;
     return redirect(
-      base + '?ok=' + encodeURIComponent(`Refreshed ${repo.fullName} from GitHub.`),
+      current + '?ok=' + encodeURIComponent(`Refreshed ${repo.fullName} from GitHub.`),
       303,
     );
   } catch (error) {

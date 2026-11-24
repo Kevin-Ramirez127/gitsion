@@ -109,6 +109,7 @@ test('built dashboard protects mutations and renders cached activity accurately'
   });
 
   const calls = [];
+  let refreshed = repo;
   const backend = http.createServer((req, res) => {
     if (req.method !== 'GET') calls.push({ method: req.method, path: req.url,
       privileged: req.headers.authorization === `Bearer ${token}` });
@@ -125,7 +126,7 @@ test('built dashboard protects mutations and renders cached activity accurately'
     }
     if (req.method === 'DELETE') { res.statusCode = 204; return res.end(); }
     if (req.method === 'POST' && req.url === '/api/v1/repos') res.statusCode = 201;
-    res.end(JSON.stringify(repo));
+    res.end(JSON.stringify(req.url.endsWith('/refresh') ? refreshed : repo));
   });
   const backendPort = await listen(backend);
   t.after(() => new Promise((resolve) => backend.close(resolve)));
@@ -172,6 +173,17 @@ test('built dashboard protects mutations and renders cached activity accurately'
       }
     }
     calls.length = 0;
+  });
+
+  await t.test('a refresh lands on the page of the name GitHub reports', async () => {
+    const refresh = async () => (await post(app.base, '/api/refresh', {
+      Cookie: cookie, 'Sec-Fetch-Site': 'same-origin',
+    })).headers.get('location');
+    assert.ok((await refresh()).startsWith('/repos/acme/widget?ok='));
+    refreshed = { ...repo, fullName: 'acme-labs/gadget', name: 'gadget', owner: user('acme-labs') };
+    try {
+      assert.ok((await refresh()).startsWith('/repos/acme-labs/gadget?ok=Refreshed%20acme-labs%2Fgadget'));
+    } finally { refreshed = repo; calls.length = 0; }
   });
 
   await t.test('read-only mode rejects mutations and continues serving the public dashboard', async () => {

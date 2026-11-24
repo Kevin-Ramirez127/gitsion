@@ -340,3 +340,29 @@ func TestGetErrors(t *testing.T) {
 		})
 	}
 }
+
+// The tracker notices a rename through this: GitHub redirects a former name to
+// the repository, whose metadata carries the current one.
+func TestFetchRepositoryReportsTheNameARenameRedirectsTo(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/repos/acme/widget", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/repositories/42", http.StatusMovedPermanently)
+	})
+	mux.HandleFunc("/repositories/42", func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
+			t.Errorf("authorization header after the redirect = %q", got)
+		}
+		_, _ = w.Write([]byte(`{"name": "gadget", "full_name": "acme-labs/gadget",
+			"owner": {"login": "acme-labs"}, "visibility": "public"}`))
+	})
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	repo, err := NewClient(server.URL, "test-token").FetchRepository(context.Background(), "acme", "widget")
+	if err != nil {
+		t.Fatalf("FetchRepository: %v", err)
+	}
+	if repo.FullName != "acme-labs/gadget" || repo.Name != "gadget" || repo.Owner.Login != "acme-labs" {
+		t.Fatalf("repo = %+v", repo)
+	}
+}

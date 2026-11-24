@@ -22,6 +22,10 @@ type RepositoryStore interface {
 	Get(ctx context.Context, owner, name string) (*model.Repository, error)
 	Create(ctx context.Context, repo *model.Repository) error
 	ReplaceSnapshot(ctx context.Context, repo *model.Repository) error
+	// Rename replaces the repository stored as owner/name with repo, which
+	// carries another name. It returns ErrDuplicate when that name is already
+	// tracked, leaving both records as they were.
+	Rename(ctx context.Context, owner, name string, repo *model.Repository) error
 	Delete(ctx context.Context, owner, name string) (bool, error)
 	Ping(ctx context.Context) error
 }
